@@ -114,6 +114,16 @@ async function run(job) {
     location.href = target;
     return 'navigating';
   }
+  // grab: no generation, just bring back the last generated image of this conversation
+  if (job.grab) {
+    await progress('grab');
+    const img = await waitFor(() => {
+      const all = [...document.querySelectorAll(SEL.images)].filter((i) => i.complete && i.naturalWidth >= 600 && !i.closest(SEL.userTurn));
+      return all[all.length - 1];
+    }, 30000, 'an image in this conversation');
+    const blob = await (await fetch(img.src, {credentials: 'include'})).blob();
+    return {image: await blobToDataUrl(blob), chatUrl: location.href.split('?')[0]};
+  }
   const box = await waitFor(() => document.querySelector(SEL.composer), 60000, 'composer');
   // 2. reference images
   if (job.refs?.length) {

@@ -69,9 +69,9 @@ createServer(async (req, res) => {
   try {
     if (req.method === 'POST' && p === '/jobs') {
       const b = await body(req);
-      if (!b.prompt) return send(res, 400, {error: 'prompt required'});
+      if (!b.prompt && !b.grab) return send(res, 400, {error: 'prompt required'});
       const id = `j${++seq}`;
-      jobs.set(id, {id, prompt: b.prompt, refs: b.refs ?? [], topic: b.topic ?? null, chat: b.chat ?? null, mode: b.mode ?? 'here', status: 'waiting', step: '', at: Date.now()});
+      jobs.set(id, {id, prompt: b.prompt, refs: b.refs ?? [], topic: b.topic ?? null, chat: b.chat ?? null, mode: b.mode ?? 'here', grab: !!b.grab, status: 'waiting', step: '', at: Date.now()});
       log('job', id, b.topic ? `topic=${b.topic}` : '(new chat)', `${(b.refs ?? []).length} refs`);
       return send(res, 200, {id});
     }
@@ -107,7 +107,7 @@ createServer(async (req, res) => {
       log('start', j.id);
       // where: an explicit conversation, the topic's conversation, a new one, or the tab's current one (default)
       const chatUrl = j.chat || (j.topic && chats[j.topic]) || null;
-      return send(res, 200, {job: {id: j.id, prompt: j.prompt, refs: j.refs, chatUrl, mode: chatUrl ? 'chat' : j.topic ? 'new' : j.mode}});
+      return send(res, 200, {job: {id: j.id, prompt: j.prompt, refs: j.refs, grab: j.grab, chatUrl, mode: chatUrl ? 'chat' : j.topic ? 'new' : j.mode}});
     }
     const pr = /^\/ext\/progress\/(j\d+)$/.exec(p);
     if (req.method === 'POST' && pr) {

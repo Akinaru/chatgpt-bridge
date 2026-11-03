@@ -27,9 +27,10 @@ const flag = (k) => {
 const topic = opt('--topic');
 const chat = opt('--chat');
 const mode = flag('--new') ? 'new' : 'here';
+const grab = flag('--grab');
 const [jobDir, out] = argv;
 if (!jobDir || !out) {
-  console.log('usage: node bridge/submit.mjs <jobDir> <out.png> [--new | --chat <url> | --topic <name>]');
+  console.log('usage: node bridge/submit.mjs <jobDir> <out.png> [--new | --chat <url> | --topic <name>] [--grab]');
   process.exit(2);
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -50,10 +51,10 @@ if (!(await up())) {
   log('bridge started on', BRIDGE);
 }
 
-const prompt = fs.readFileSync(path.join(jobDir, 'prompt.txt'), 'utf8').trim();
+const prompt = grab ? '' : fs.readFileSync(path.join(jobDir, 'prompt.txt'), 'utf8').trim();
 const refDir = path.join(jobDir, 'refs');
 const MIME = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp'};
-const refs = fs.existsSync(refDir)
+const refs = !grab && fs.existsSync(refDir)
   ? fs.readdirSync(refDir).filter((f) => MIME[path.extname(f).toLowerCase()]).sort().map((f) => ({name: f, data: `data:${MIME[path.extname(f).toLowerCase()]};base64,${fs.readFileSync(path.join(refDir, f)).toString('base64')}`}))
   : [];
 // guard: a tab must be chosen (never work in someone's conversation by surprise)
@@ -64,7 +65,7 @@ if (st.worker == null) {
   console.error('Choisis-en un : node bridge/tabs.mjs use <id>');
   process.exit(3);
 }
-const {id} = await (await fetch(`${BRIDGE}/jobs`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({prompt, refs, topic, chat, mode})})).json();
+const {id} = await (await fetch(`${BRIDGE}/jobs`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({prompt, refs, topic, chat, mode, grab})})).json();
 log('job', id, topic ? `topic « ${topic} »` : '(new conversation)', `${refs.length} refs`);
 
 let last = '';
