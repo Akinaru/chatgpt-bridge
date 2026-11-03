@@ -57,6 +57,20 @@ function dataUrlToFile(d, name) {
   return new File([buf], name, {type: mime});
 }
 
+/** A reference as a File, shrunk to `max` px on its longest side (PNG keeps the transparency). */
+async function shrink(dataUrl, name, max = 1600) {
+  const src = dataUrlToFile(dataUrl, name);
+  const bmp = await createImageBitmap(src);
+  const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+  if (k >= 1) return {file: src, w: bmp.width, h: bmp.height};
+  const w = Math.round(bmp.width * k);
+  const h = Math.round(bmp.height * k);
+  const c = new OffscreenCanvas(w, h);
+  c.getContext('2d').drawImage(bmp, 0, 0, w, h);
+  const blob = await c.convertToBlob({type: 'image/png'});
+  return {file: new File([blob], name.replace(/\.[a-z]+$/i, '.png'), {type: 'image/png'}), w, h};
+}
+
 /** Images that come after our last message in the page (ChatGPT echoes our references inside or near our turn). */
 function afterLastUserTurn(imgs) {
   const turns = document.querySelectorAll(SEL.userTurn);
@@ -167,74 +181,113 @@ async function run(job) {
     return {image: await blobToDataUrl(blob), chatUrl: location.href.split('?')[0]};
   }
   const box = await waitFor(() => document.querySelector(SEL.composer), 60000, 'composer');
-  // 2. reference images
-  if (job.refs?.length) {
+  const refNames = new Set((job.refs ?? []).map((r) => r.name));
+  const refRatios = [];
+  const refSizes = new Set();
+  const composerImgs = () => (box.closest('form') ?? document).querySelectorAll('img').length;
+
+  // 2. references: shrunk to 1600 px max (big files fail to upload), attached, then we wait until they show
+  async function attach() {
+    if (!job.refs?.length) return;
     await progress('upload');
     const input = await waitFor(() => document.querySelector(SEL.fileInput), 20000, 'file input');
+    const n0 = composerImgs();
     const dt = new DataTransfer();
-    job.refs.forEach((r, i) => dt.items.add(dataUrlToFile(r.data, r.name || `ref-${i + 1}.png`)));
+    for (const [i, r] of job.refs.entries()) {
+      const f = await shrink(r.data, r.name || `ref-${i + 1}.png`);
+      refSizes.add(`${f.w}x${f.h}`);
+      refRatios.push(f.w / f.h);
+      dt.items.add(f.file);
+    }
     input.files = dt.files;
     input.dispatchEvent(new Event('change', {bubbles: true}));
+    const ok = await waitFor(() => composerImgs() - n0 >= job.refs.length, 90000, 'reference thumbnails').catch(() => false);
+    if (!ok) say('only', composerImgs() - n0, 'of', job.refs.length, 'references visible; sending anyway');
     await sleep(1500);
   }
-  // 3. prompt (the send button only appears once there is text), then wait for the uploads to finish
-  box.focus();
-  if (box.tagName === 'TEXTAREA') {
-    const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
-    set.call(box, job.prompt);
-    box.dispatchEvent(new Event('input', {bubbles: true}));
-  } else document.execCommand('insertText', false, job.prompt);
-  await sleep(800);
-  const effort = await ensureEffort(job.effort || 'high');
-  say('thinking effort:', effort);
-  await progress(`effort ${effort}`);
-  await progress('waiting uploads');
-  const sendBtn = await waitFor(() => {
-    const b = document.querySelector(SEL.send);
-    return b && !b.disabled && b.getAttribute('aria-disabled') !== 'true' && b;
-  }, 180000, 'send button');
-  const before = new Set([...document.querySelectorAll(SEL.images)].map((i) => i.src));
-  const refRatios = [];
-  const refSizes = new Set(
-    await Promise.all(
-      (job.refs ?? []).map(
-        (r) =>
-          new Promise((ok) => {
-            const im = new Image();
-            im.onload = () => (refRatios.push(im.naturalWidth / im.naturalHeight), ok(`${im.naturalWidth}x${im.naturalHeight}`));
-            im.onerror = () => ok('');
-            im.src = r.data;
-          }),
-      ),
-    ),
-  );
-  sendBtn.click();
-  const sentAt = Date.now();
+
+  // 3. type a message and send it (the send button appears with the text and stays disabled while uploading)
+  async function typeAndSend(text) {
+    box.focus();
+    if (box.tagName === 'TEXTAREA') {
+      const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+      set.call(box, text);
+      box.dispatchEvent(new Event('input', {bubbles: true}));
+    } else document.execCommand('insertText', false, text);
+    await sleep(800);
+    const effort = await ensureEffort(job.effort || 'high');
+    say('thinking effort:', effort);
+    await progress(`effort ${effort}`);
+    await progress('waiting uploads');
+    const sendBtn = await waitFor(() => {
+      const b = document.querySelector(SEL.send);
+      return b && !b.disabled && b.getAttribute('aria-disabled') !== 'true' && b;
+    }, 180000, 'send button');
+    before = new Set([...document.querySelectorAll(SEL.images)].map((i) => i.src));
+    sendBtn.click();
+    sentAt = Date.now();
+    started = false;
+    await progress('generating');
+  }
+
+  let before = new Set();
+  let sentAt = 0;
   let started = false;
-  await progress('generating');
-  const refNames = new Set((job.refs ?? []).map((r) => r.name));
-  // 4. the new image: large, loaded, unchanged for a few checks, generation finished
+  await attach();
+  await typeAndSend(job.prompt);
+
+  // 4. wait for the image; if ChatGPT answers with text instead (asks for the references, a question, a failure),
+  // answer it and try again (2 times at most), so a job never stays blocked
   let src = null;
   let stable = 0;
-  const end = Date.now() + 8 * 60000;
+  let retries = 0;
+  let quietSince = 0;
+  const lastAnswer = () => {
+    const a = document.querySelectorAll('[data-message-author-role="assistant"]');
+    return (a[a.length - 1]?.textContent ?? '').trim();
+  };
+  const end = Date.now() + 10 * 60000;
   while (Date.now() < end) {
     await sleep(3000);
-    // new, large, loaded images that are not one of our references in the user turn
-    // the answer must have started (stop button seen) and an image must be new, large, loaded, and not one of our
-    // references echoed in the conversation (same pixel size or inside the user turn)
-    if (document.querySelector(SEL.stop)) started = true;
+    const busyGen = !!document.querySelector(SEL.stop);
+    if (busyGen) started = true;
     if (!started && Date.now() - sentAt < 45000) continue;
     const imgs = afterLastUserTurn([...document.querySelectorAll(SEL.images)]).filter(
       (i) => !before.has(i.src) && i.complete && i.naturalWidth >= 600 && !refNames.has(i.alt) && !refSizes.has(`${i.naturalWidth}x${i.naturalHeight}`) && !(refRatios.length && refRatio(i, refRatios) && i.naturalWidth !== i.naturalHeight),
     );
     const cand = imgs.length ? imgs[imgs.length - 1].src : null;
-    const busyGen = !!document.querySelector(SEL.stop);
     if (cand && cand === src && !busyGen) {
       if (++stable >= 3) break;
-    } else {
-      stable = 0;
-      src = cand;
+      continue;
     }
+    stable = 0;
+    src = cand;
+    if (cand || busyGen) {
+      quietSince = 0;
+      continue;
+    }
+    // finished, no image: what did it say?
+    quietSince ||= Date.now();
+    if (Date.now() - quietSince < 12000) continue;
+    const said = lastAnswer();
+    if (retries >= 2) throw new Error(`ChatGPT answered without an image: ${said.slice(0, 300)}`);
+    retries++;
+    say('no image, answer was:', said.slice(0, 200));
+    const retry = [...document.querySelectorAll('button')].find((b) => /^(try again|réessayer|regenerate|régénérer)$/i.test(b.textContent.trim()));
+    if (/joindre|joins|attach|upload|référence|reference|images? (de )?r/i.test(said)) {
+      await progress(`retry ${retries}: references again`);
+      await attach();
+      await typeAndSend('Voici les images de référence en pièces jointes. Génère l’image maintenant, avec les consignes précédentes, sans poser de question.');
+    } else if (retry && /fail|échou|error|erreur|try again|réessay/i.test(said)) {
+      await progress(`retry ${retries}: try again`);
+      retry.click();
+      sentAt = Date.now();
+      started = false;
+    } else {
+      await progress(`retry ${retries}: go on`);
+      await typeAndSend('Oui, vas-y : génère l’image maintenant avec ces consignes, sans poser de question.');
+    }
+    quietSince = 0;
   }
   if (!src) {
     const all = [...document.querySelectorAll('main img')].slice(-6).map((i) => `${i.naturalWidth}x${i.naturalHeight} alt=${(i.alt || '').slice(0, 20)} user=${!!i.closest(SEL.userTurn)} src=${i.src.slice(0, 60)}`);
