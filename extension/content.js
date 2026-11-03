@@ -57,7 +57,22 @@ function dataUrlToFile(d, name) {
   return new File([buf], name, {type: mime});
 }
 
-async function blobToDataUrl(b) {
+async /** Images that come after our last message in the page (ChatGPT echoes our references inside or near our turn). */
+function afterLastUserTurn(imgs) {
+  const turns = document.querySelectorAll(SEL.userTurn);
+  const last = turns[turns.length - 1];
+  if (!last) return imgs;
+  // the references are shown in our turn; the answer's images come after it in the page
+  return imgs.filter((i) => !last.contains(i) && last.compareDocumentPosition(i) & Node.DOCUMENT_POSITION_FOLLOWING && !i.closest('[data-message-author-role="user"]'));
+}
+
+/** Same width/height ratio as one of our references (ChatGPT may show them resized). */
+function refRatio(img, ratios) {
+  const r = img.naturalWidth / img.naturalHeight;
+  return ratios.some((x) => Math.abs(x - r) < 0.004);
+}
+
+function blobToDataUrl(b) {
   return new Promise((res) => {
     const r = new FileReader();
     r.onload = () => res(r.result);
@@ -145,7 +160,7 @@ async function run(job) {
   if (job.grab) {
     await progress('grab');
     const img = await waitFor(() => {
-      const all = [...document.querySelectorAll(SEL.images)].filter((i) => i.complete && i.naturalWidth >= 600 && !i.closest(SEL.userTurn));
+      const all = afterLastUserTurn([...document.querySelectorAll(SEL.images)]).filter((i) => i.complete && i.naturalWidth >= 600);
       return all[all.length - 1];
     }, 30000, 'an image in this conversation');
     const blob = await (await fetch(img.src, {credentials: 'include'})).blob();
@@ -179,13 +194,14 @@ async function run(job) {
     return b && !b.disabled && b.getAttribute('aria-disabled') !== 'true' && b;
   }, 180000, 'send button');
   const before = new Set([...document.querySelectorAll(SEL.images)].map((i) => i.src));
+  const refRatios = [];
   const refSizes = new Set(
     await Promise.all(
       (job.refs ?? []).map(
         (r) =>
           new Promise((ok) => {
             const im = new Image();
-            im.onload = () => ok(`${im.naturalWidth}x${im.naturalHeight}`);
+            im.onload = () => (refRatios.push(im.naturalWidth / im.naturalHeight), ok(`${im.naturalWidth}x${im.naturalHeight}`));
             im.onerror = () => ok('');
             im.src = r.data;
           }),
@@ -208,8 +224,8 @@ async function run(job) {
     // references echoed in the conversation (same pixel size or inside the user turn)
     if (document.querySelector(SEL.stop)) started = true;
     if (!started && Date.now() - sentAt < 45000) continue;
-    const imgs = [...document.querySelectorAll(SEL.images)].filter(
-      (i) => !before.has(i.src) && i.complete && i.naturalWidth >= 600 && !i.closest(SEL.userTurn) && !refNames.has(i.alt) && !refSizes.has(`${i.naturalWidth}x${i.naturalHeight}`),
+    const imgs = afterLastUserTurn([...document.querySelectorAll(SEL.images)]).filter(
+      (i) => !before.has(i.src) && i.complete && i.naturalWidth >= 600 && !refNames.has(i.alt) && !refSizes.has(`${i.naturalWidth}x${i.naturalHeight}`) && !(refRatios.length && refRatio(i, refRatios) && i.naturalWidth !== i.naturalHeight),
     );
     const cand = imgs.length ? imgs[imgs.length - 1].src : null;
     const busyGen = !!document.querySelector(SEL.stop);
