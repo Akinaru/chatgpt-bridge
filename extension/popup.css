@@ -1,0 +1,61 @@
+:root {
+  --bg: #1d1538;
+  --panel: #2a1f4e;
+  --line: #3d2f6b;
+  --ink: #f3ecff;
+  --muted: #a99bc9;
+  --gold: #f2b134;
+  --ok: #5fe36a;
+  --ko: #ff6b5a;
+  --run: #3fd8ff;
+}
+* { box-sizing: border-box; }
+body { width: 380px; margin: 0; background: var(--bg); color: var(--ink); font: 13px/1.35 system-ui, -apple-system, sans-serif; }
+header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: linear-gradient(135deg, #3a2470, #2a1f4e); border-bottom: 1px solid var(--line); }
+.brand { display: flex; gap: 10px; align-items: center; }
+.brand b { display: block; font-size: 14px; }
+.brand small { color: var(--gold); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; font-size: 10px; }
+.logo { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: var(--gold); color: #2a1840; font-size: 16px; }
+.pill { padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; background: var(--line); }
+.pill.ok { background: rgb(95 227 106 / 0.18); color: var(--ok); }
+.pill.ko { background: rgb(255 107 90 / 0.18); color: var(--ko); }
+.pill.run { background: rgb(63 216 255 / 0.18); color: var(--run); }
+section { padding: 10px 14px; border-bottom: 1px solid var(--line); }
+h2 { margin: 0 0 8px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.list { display: flex; flex-direction: column; gap: 6px; max-height: 210px; overflow-y: auto; }
+.row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.between { justify-content: space-between; }
+.small { font-size: 11px; }
+.muted { color: var(--muted); }
+.card { padding: 8px 10px; border-radius: 10px; background: var(--panel); }
+.tab { display: flex; gap: 8px; align-items: center; padding: 7px 9px; border-radius: 10px; background: var(--panel); cursor: pointer; border: 1px solid transparent; }
+.tab.on { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
+.tab .t { flex: 1; min-width: 0; }
+.tab .t b, .tab .t span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab .t span { color: var(--muted); font-size: 11px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--muted); flex: none; }
+.tab.on .dot { background: var(--gold); border-color: var(--gold); }
+button { font: inherit; color: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); padding: 4px 9px; }
+button:hover { border-color: var(--gold); }
+button.ghost { background: transparent; }
+button.danger { color: var(--ko); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; background: transparent; padding: 4px 9px; }
+.seg button.on { background: var(--gold); color: #2a1840; font-weight: 700; }
+.job { display: flex; gap: 9px; align-items: center; padding: 6px; border-radius: 10px; background: var(--panel); }
+.job img, .job .ph { width: 44px; height: 44px; border-radius: 7px; object-fit: cover; background: var(--line); flex: none; display: grid; place-items: center; color: var(--muted); }
+.job .t { flex: 1; min-width: 0; }
+.job .t b { display: block; font-size: 12px; }
+.job .t span { display: block; color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 6px; }
+.st.done { color: var(--ok); background: rgb(95 227 106 / 0.14); }
+.st.error { color: var(--ko); background: rgb(255 107 90 / 0.14); }
+.acts { display: flex; gap: 4px; }
+.acts button { padding: 2px 6px; font-size: 11px; }
+.bar { height: 4px; border-radius: 4px; background: var(--line); overflow: hidden; margin-top: 6px; }
+.bar i { display: block; height: 100%; width: 40%; background: var(--run); animation: slide 1.2s ease-in-out infinite; }
+@keyframes slide { from { margin-left: -40%; } to { margin-left: 100%; } }
+input[type='checkbox'] { accent-color: var(--gold); width: 16px; height: 16px; }
+label.row span { flex: 1; }
+footer { padding: 8px 14px 12px; }
+code { background: var(--panel); padding: 1px 5px; border-radius: 5px; }

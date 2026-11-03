@@ -36,7 +36,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 async function guard() {
   try {
     const s = await call('/ext/status');
-    if (!s.waiting || Date.now() - lastSeen < 15000) return;
+    if (!s.waiting || Date.now() - lastSeen < 15000 || s.settings?.autoOpenTab === false) return;
     const tabs = await chrome.tabs.query({url: 'https://chatgpt.com/*'});
     if (!tabs.length) await chrome.tabs.create({url: 'https://chatgpt.com/', active: false});
     else if (tabs[0].discarded) await chrome.tabs.reload(tabs[0].id);

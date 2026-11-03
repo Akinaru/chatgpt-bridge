@@ -170,7 +170,7 @@ async function run(job) {
     box.dispatchEvent(new Event('input', {bubbles: true}));
   } else document.execCommand('insertText', false, job.prompt);
   await sleep(800);
-  const effort = await ensureEffort('high');
+  const effort = await ensureEffort(job.effort || 'high');
   say('thinking effort:', effort);
   await progress(`effort ${effort}`);
   await progress('waiting uploads');
