@@ -2,7 +2,7 @@
 // (same topic = same chat), attaches the reference images, types the prompt, sends, waits for the generated image and
 // sends it back. One job at a time. Selectors live at the top: adapt them when ChatGPT changes its interface.
 const SEL = {
-  composer: '#prompt-textarea',
+  composer: '#prompt-textarea, div.ProseMirror[contenteditable="true"], div[contenteditable="true"][role="textbox"], textarea[name="prompt-textarea"], form textarea',
   fileInput: 'input[type="file"]',
   send: '[data-testid="send-button"]',
   stop: '[data-testid="stop-button"]',
@@ -13,6 +13,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const send = (msg) => new Promise((r) => chrome.runtime.sendMessage(msg, (x) => r(x ?? {ok: false})));
 let busy = false;
 
+/** What the page looks like when a step fails (to adapt the selectors). */
+function probe() {
+  const ce = [...document.querySelectorAll('[contenteditable="true"], textarea')].slice(0, 5).map((e) => `${e.tagName.toLowerCase()}#${e.id}.${String(e.className).split(' ').slice(0, 2).join('.')}`);
+  const btn = [...document.querySelectorAll('button[data-testid]')].slice(0, 12).map((b) => b.dataset.testid);
+  return `url=${location.pathname} title=${document.title.slice(0, 40)} visible=${document.visibilityState} editors=[${ce.join(' | ')}] buttons=[${btn.join(',')}] files=${document.querySelectorAll('input[type=file]').length}`;
+}
+
 async function waitFor(fn, ms, what) {
   const end = Date.now() + ms;
   while (Date.now() < end) {
@@ -20,7 +27,7 @@ async function waitFor(fn, ms, what) {
     if (v) return v;
     await sleep(500);
   }
-  throw new Error(`timeout: ${what}`);
+  throw new Error(`timeout: ${what} — ${probe()}`);
 }
 
 function dataUrlToFile(d, name) {
@@ -68,7 +75,11 @@ async function run(job) {
   // 3. prompt
   const before = new Set([...document.querySelectorAll(SEL.images)].map((i) => i.src));
   box.focus();
-  document.execCommand('insertText', false, job.prompt);
+  if (box.tagName === 'TEXTAREA') {
+    const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+    set.call(box, job.prompt);
+    box.dispatchEvent(new Event('input', {bubbles: true}));
+  } else document.execCommand('insertText', false, job.prompt);
   await sleep(600);
   const sendBtn = await waitFor(() => {
     const b = document.querySelector(SEL.send);
