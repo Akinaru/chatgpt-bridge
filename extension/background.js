@@ -23,6 +23,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
         reply({ok: true});
       } else reply({ok: false, error: 'unknown message'});
     } catch (e) {
+      console.warn('[aki-bridge] bridge call failed', String(e));
       reply({ok: false, error: String(e)});
     }
   })();

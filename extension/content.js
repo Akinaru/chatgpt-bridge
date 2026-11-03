@@ -10,7 +10,20 @@ const SEL = {
 };
 const JOB_KEY = 'aki-bridge-job';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const send = (msg) => new Promise((r) => chrome.runtime.sendMessage(msg, (x) => r(x ?? {ok: false})));
+const say = (...a) => console.info('[aki-bridge]', ...a);
+const send = (msg) =>
+  new Promise((r) => {
+    try {
+      chrome.runtime.sendMessage(msg, (x) => {
+        const err = chrome.runtime.lastError;
+        if (err) say('message error:', err.message);
+        r(x ?? {ok: false, error: err?.message});
+      });
+    } catch (e) {
+      say('extension unreachable (reload this tab):', String(e));
+      r({ok: false, error: String(e)});
+    }
+  });
 let busy = false;
 
 /** What the page looks like when a step fails (to adapt the selectors). */
@@ -120,7 +133,9 @@ async function tick() {
       job = JSON.parse(saved);
     } else {
       const r = await send({type: 'poll'});
+      if (!r.ok) say('poll failed:', r.error);
       job = r.ok ? r.job : null;
+      if (job) say('job', job.id);
     }
     if (!job) return;
     try {
@@ -135,5 +150,6 @@ async function tick() {
   }
 }
 
+say('content script ready on', location.pathname);
 setInterval(tick, 3000);
 tick();
