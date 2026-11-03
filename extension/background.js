@@ -45,3 +45,11 @@ async function guard() {
 setInterval(guard, 10000);
 chrome.runtime.onStartup.addListener(guard);
 chrome.runtime.onInstalled.addListener(guard);
+
+// After an install / reload of the extension, the open ChatGPT tabs still run the old (dead) script: inject the new
+// one so nobody has to reload the tabs.
+chrome.runtime.onInstalled.addListener(async () => {
+  for (const t of await chrome.tabs.query({url: 'https://chatgpt.com/*'})) {
+    chrome.scripting.executeScript({target: {tabId: t.id}, files: ['content.js']}).catch(() => {});
+  }
+});
