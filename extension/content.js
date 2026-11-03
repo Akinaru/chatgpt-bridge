@@ -9,7 +9,7 @@ const SEL = {
   fileInput: 'input[type="file"]',
   send: '[data-testid="send-button"]',
   stop: '[data-testid="stop-button"]',
-  images: 'main img',
+  images: 'main [data-message-author-role="assistant"] img',
 };
 const JOB_KEY = 'aki-bridge-job';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -82,13 +82,9 @@ async function run(job) {
     job.refs.forEach((r, i) => dt.items.add(dataUrlToFile(r.data, r.name || `ref-${i + 1}.png`)));
     input.files = dt.files;
     input.dispatchEvent(new Event('change', {bubbles: true}));
-    await sleep(3000);
-    await waitFor(() => {
-      const b = document.querySelector(SEL.send);
-      return b && !b.disabled;
-    }, 180000, 'uploads');
+    await sleep(1500);
   }
-  // 3. prompt
+  // 3. prompt (the send button only appears once there is text), then wait for the uploads to finish
   const before = new Set([...document.querySelectorAll(SEL.images)].map((i) => i.src));
   box.focus();
   if (box.tagName === 'TEXTAREA') {
@@ -96,11 +92,12 @@ async function run(job) {
     set.call(box, job.prompt);
     box.dispatchEvent(new Event('input', {bubbles: true}));
   } else document.execCommand('insertText', false, job.prompt);
-  await sleep(600);
+  await sleep(800);
+  await progress('waiting uploads');
   const sendBtn = await waitFor(() => {
     const b = document.querySelector(SEL.send);
-    return b && !b.disabled && b;
-  }, 20000, 'send button');
+    return b && !b.disabled && b.getAttribute('aria-disabled') !== 'true' && b;
+  }, 180000, 'send button');
   sendBtn.click();
   await progress('generating');
   // 4. the new image: large, loaded, unchanged for a few checks, generation finished
