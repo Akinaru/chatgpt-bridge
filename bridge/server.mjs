@@ -36,7 +36,7 @@ const HISTORY = path.join(DIR, 'history.json');
 /** Last 50 finished jobs (no image data: the image is a file in ~/.aki-chatgpt/images). */
 const history = fs.existsSync(HISTORY) ? JSON.parse(fs.readFileSync(HISTORY, 'utf8')) : [];
 const SETTINGS = path.join(DIR, 'settings.json');
-const settings = {effort: 'high', autoOpenTab: true, ...(fs.existsSync(SETTINGS) ? JSON.parse(fs.readFileSync(SETTINGS, 'utf8')) : {})};
+const settings = {effort: 'high', autoOpenTab: true, newChat: false, ...(fs.existsSync(SETTINGS) ? JSON.parse(fs.readFileSync(SETTINGS, 'utf8')) : {})};
 function remember(j) {
   const h = {id: j.id, topic: j.topic, kind: j.grab ? 'grab' : j.capture ? 'capture' : 'image', status: j.status, error: j.error, chatUrl: j.chatUrl, prompt: (j.prompt || '').slice(0, 140), refs: (j.refs || []).length, created: j.created, ended: Date.now(), image: j.file ? path.basename(j.file) : null};
   history.unshift(h);
@@ -155,7 +155,7 @@ createServer(async (req, res) => {
       log('start', j.id);
       // where: an explicit conversation, the topic's conversation, a new one, or the tab's current one (default)
       const chatUrl = j.chat || (j.topic && chats[j.topic]) || null;
-      return send(res, 200, {job: {id: j.id, prompt: j.prompt, refs: j.refs, grab: j.grab, capture: j.capture, effort: settings.effort, chatUrl, mode: chatUrl ? 'chat' : j.topic ? 'new' : j.mode}});
+      return send(res, 200, {job: {id: j.id, prompt: j.prompt, refs: j.refs, grab: j.grab, capture: j.capture, effort: settings.effort, chatUrl, mode: chatUrl ? 'chat' : j.topic || settings.newChat ? 'new' : j.mode}});
     }
     const pr = /^\/ext\/progress\/(j[a-z0-9]+)$/.exec(p);
     if (req.method === 'POST' && pr) {

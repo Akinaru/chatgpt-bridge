@@ -50,6 +50,7 @@ function render() {
   // settings
   for (const b of $('effort').children) b.classList.toggle('on', b.dataset.v === (status.settings?.effort ?? 'high'));
   $('autoopen').checked = status.settings?.autoOpenTab !== false;
+  $('newchat').checked = !!status.settings?.newChat;
   // topics
   const topics = Object.entries(hist?.topics ?? {});
   $('topics').innerHTML = topics.length
@@ -102,6 +103,10 @@ document.addEventListener('click', async (e) => {
   else if (el.dataset.forget) await api('/topics/forget', {topic: el.dataset.forget});
   else if (el.dataset.v) await api('/settings', {effort: el.dataset.v});
   else if (el.id === 'clear') await api('/history/clear', {});
+  refresh();
+});
+$('newchat').addEventListener('change', async (e) => {
+  await api('/settings', {newChat: e.target.checked});
   refresh();
 });
 $('autoopen').addEventListener('change', async (e) => {
