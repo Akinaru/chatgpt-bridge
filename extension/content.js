@@ -2,6 +2,7 @@
 // (same topic = same chat), attaches the reference images, types the prompt, sends, waits for the generated image and
 // sends it back. One job at a time. Selectors live at the top: adapt them when ChatGPT changes its interface.
 // one live copy per tab (the extension can re-inject it after a reload)
+(() => {
 if (window.__akiBridgeStop) window.__akiBridgeStop();
 const SEL = {
   composer: '#prompt-textarea, div.ProseMirror[contenteditable="true"], div[contenteditable="true"][role="textbox"], textarea[name="prompt-textarea"], form textarea',
@@ -160,3 +161,4 @@ const timer = setInterval(() => {
 }, 3000);
 window.__akiBridgeStop = () => clearInterval(timer);
 tick();
+})();
