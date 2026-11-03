@@ -57,7 +57,7 @@ function dataUrlToFile(d, name) {
   return new File([buf], name, {type: mime});
 }
 
-async /** Images that come after our last message in the page (ChatGPT echoes our references inside or near our turn). */
+/** Images that come after our last message in the page (ChatGPT echoes our references inside or near our turn). */
 function afterLastUserTurn(imgs) {
   const turns = document.querySelectorAll(SEL.userTurn);
   const last = turns[turns.length - 1];
@@ -72,7 +72,7 @@ function refRatio(img, ratios) {
   return ratios.some((x) => Math.abs(x - r) < 0.004);
 }
 
-function blobToDataUrl(b) {
+async function blobToDataUrl(b) {
   return new Promise((res) => {
     const r = new FileReader();
     r.onload = () => res(r.result);
