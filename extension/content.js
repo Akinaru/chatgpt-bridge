@@ -11,7 +11,8 @@ const SEL = {
   effort: 'button[data-composer-navigation-target="reasoning"]',
   menuItem: '[role="menuitem"], [role="menuitemradio"], [role="option"]',
   stop: '[data-testid="stop-button"]',
-  images: 'main [data-message-author-role="assistant"] img',
+  images: 'main img',
+  userTurn: '[data-message-author-role="user"]',
 };
 const JOB_KEY = 'aki-bridge-job';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -129,13 +130,15 @@ async function run(job) {
   }, 180000, 'send button');
   sendBtn.click();
   await progress('generating');
+  const refNames = new Set((job.refs ?? []).map((r) => r.name));
   // 4. the new image: large, loaded, unchanged for a few checks, generation finished
   let src = null;
   let stable = 0;
   const end = Date.now() + 8 * 60000;
   while (Date.now() < end) {
     await sleep(3000);
-    const imgs = [...document.querySelectorAll(SEL.images)].filter((i) => !before.has(i.src) && i.complete && i.naturalWidth >= 600);
+    // new, large, loaded images that are not one of our references in the user turn
+    const imgs = [...document.querySelectorAll(SEL.images)].filter((i) => !before.has(i.src) && i.complete && i.naturalWidth >= 600 && !i.closest(SEL.userTurn) && !refNames.has(i.alt));
     const cand = imgs.length ? imgs[imgs.length - 1].src : null;
     const busyGen = !!document.querySelector(SEL.stop);
     if (cand && cand === src && !busyGen) {
@@ -145,7 +148,10 @@ async function run(job) {
       src = cand;
     }
   }
-  if (!src) throw new Error('timeout: no generated image');
+  if (!src) {
+    const all = [...document.querySelectorAll('main img')].slice(-6).map((i) => `${i.naturalWidth}x${i.naturalHeight} alt=${(i.alt || '').slice(0, 20)} user=${!!i.closest(SEL.userTurn)} src=${i.src.slice(0, 60)}`);
+    throw new Error(`timeout: no generated image — last images: ${all.join(' | ')}`);
+  }
   await progress('download');
   const blob = await (await fetch(src, {credentials: 'include'})).blob();
   return {image: await blobToDataUrl(blob), chatUrl: location.href.split('?')[0]};
