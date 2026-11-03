@@ -126,7 +126,6 @@ async function run(job) {
     await sleep(1500);
   }
   // 3. prompt (the send button only appears once there is text), then wait for the uploads to finish
-  const before = new Set([...document.querySelectorAll(SEL.images)].map((i) => i.src));
   box.focus();
   if (box.tagName === 'TEXTAREA') {
     const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
@@ -142,7 +141,23 @@ async function run(job) {
     const b = document.querySelector(SEL.send);
     return b && !b.disabled && b.getAttribute('aria-disabled') !== 'true' && b;
   }, 180000, 'send button');
+  const before = new Set([...document.querySelectorAll(SEL.images)].map((i) => i.src));
+  const refSizes = new Set(
+    await Promise.all(
+      (job.refs ?? []).map(
+        (r) =>
+          new Promise((ok) => {
+            const im = new Image();
+            im.onload = () => ok(`${im.naturalWidth}x${im.naturalHeight}`);
+            im.onerror = () => ok('');
+            im.src = r.data;
+          }),
+      ),
+    ),
+  );
   sendBtn.click();
+  const sentAt = Date.now();
+  let started = false;
   await progress('generating');
   const refNames = new Set((job.refs ?? []).map((r) => r.name));
   // 4. the new image: large, loaded, unchanged for a few checks, generation finished
@@ -152,7 +167,13 @@ async function run(job) {
   while (Date.now() < end) {
     await sleep(3000);
     // new, large, loaded images that are not one of our references in the user turn
-    const imgs = [...document.querySelectorAll(SEL.images)].filter((i) => !before.has(i.src) && i.complete && i.naturalWidth >= 600 && !i.closest(SEL.userTurn) && !refNames.has(i.alt));
+    // the answer must have started (stop button seen) and an image must be new, large, loaded, and not one of our
+    // references echoed in the conversation (same pixel size or inside the user turn)
+    if (document.querySelector(SEL.stop)) started = true;
+    if (!started && Date.now() - sentAt < 45000) continue;
+    const imgs = [...document.querySelectorAll(SEL.images)].filter(
+      (i) => !before.has(i.src) && i.complete && i.naturalWidth >= 600 && !i.closest(SEL.userTurn) && !refNames.has(i.alt) && !refSizes.has(`${i.naturalWidth}x${i.naturalHeight}`),
+    );
     const cand = imgs.length ? imgs[imgs.length - 1].src : null;
     const busyGen = !!document.querySelector(SEL.stop);
     if (cand && cand === src && !busyGen) {
