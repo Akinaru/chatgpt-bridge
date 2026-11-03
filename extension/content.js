@@ -12,6 +12,8 @@ const SEL = {
   stop: '[data-testid="stop-button"]',
   images: 'main img',
   userTurn: '[data-message-author-role="user"]',
+  generatedAlt: /generated image|image g[ée]n[ée]r[ée]e/i,
+  attachmentAlt: /user attachment|pi[eè]ce jointe|attachment/i,
 };
 const JOB_KEY = 'aki-bridge-job';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -174,7 +176,9 @@ async function run(job) {
   if (job.grab) {
     await progress('grab');
     const img = await waitFor(() => {
-      const all = afterLastUserTurn([...document.querySelectorAll(SEL.images)]).filter((i) => i.complete && i.naturalWidth >= 600);
+      const all0 = [...document.querySelectorAll(SEL.images)].filter((i) => i.complete && i.naturalWidth >= 512 && !SEL.attachmentAlt.test(i.alt || ''));
+      const lab = all0.filter((i) => SEL.generatedAlt.test(i.alt || ''));
+      const all = lab.length ? lab : afterLastUserTurn(all0);
       return all[all.length - 1];
     }, 30000, 'an image in this conversation');
     const blob = await (await fetch(img.src, {credentials: 'include'})).blob();
@@ -252,9 +256,10 @@ async function run(job) {
     const busyGen = !!document.querySelector(SEL.stop);
     if (busyGen) started = true;
     if (!started && Date.now() - sentAt < 45000) continue;
-    const imgs = afterLastUserTurn([...document.querySelectorAll(SEL.images)]).filter(
-      (i) => !before.has(i.src) && i.complete && i.naturalWidth >= 600 && !refNames.has(i.alt) && !refSizes.has(`${i.naturalWidth}x${i.naturalHeight}`) && !(refRatios.length && refRatio(i, refRatios) && i.naturalWidth !== i.naturalHeight),
-    );
+    // ChatGPT labels its images: alt "Generated image N" for results, "User attachment" for our references
+    const fresh = [...document.querySelectorAll(SEL.images)].filter((i) => !before.has(i.src) && i.complete && i.naturalWidth >= 512 && !SEL.attachmentAlt.test(i.alt || '') && !refNames.has(i.alt));
+    const labelled = fresh.filter((i) => SEL.generatedAlt.test(i.alt || ''));
+    const imgs = labelled.length ? labelled : afterLastUserTurn(fresh).filter((i) => !refSizes.has(`${i.naturalWidth}x${i.naturalHeight}`));
     const cand = imgs.length ? imgs[imgs.length - 1].src : null;
     if (cand && cand === src && !busyGen) {
       if (++stable >= 3) break;
