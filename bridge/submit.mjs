@@ -27,6 +27,7 @@ const flag = (k) => {
 const topic = opt('--topic');
 const chat = opt('--chat');
 const mode = flag('--new') ? 'new' : 'here';
+const back = Number(opt('--back')) || 1;
 const grab = flag('--grab');
 const capture = flag('--capture');
 const [jobDir, out] = argv;
@@ -66,7 +67,7 @@ if (st.worker == null) {
   console.error('Choisis-en un : node bridge/tabs.mjs use <id>');
   process.exit(3);
 }
-const {id} = await (await fetch(`${BRIDGE}/jobs`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({prompt, refs, topic, chat, mode, grab, capture})})).json();
+const {id} = await (await fetch(`${BRIDGE}/jobs`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({prompt, refs, topic, chat, mode, grab, back, capture})})).json();
 log('job', id, topic ? `topic « ${topic} »` : '(new conversation)', `${refs.length} refs`);
 
 let last = '';

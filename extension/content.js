@@ -179,7 +179,7 @@ async function run(job) {
       const all0 = [...document.querySelectorAll(SEL.images)].filter((i) => i.complete && i.naturalWidth >= 512 && !SEL.attachmentAlt.test(i.alt || ''));
       const lab = all0.filter((i) => SEL.generatedAlt.test(i.alt || ''));
       const all = lab.length ? lab : afterLastUserTurn(all0);
-      return all[all.length - 1];
+      return all[all.length - (job.back || 1)];
     }, 30000, 'an image in this conversation');
     const blob = await (await fetch(img.src, {credentials: 'include'})).blob();
     return {image: await blobToDataUrl(blob), chatUrl: location.href.split('?')[0]};

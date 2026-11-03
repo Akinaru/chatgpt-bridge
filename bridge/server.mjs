@@ -85,7 +85,7 @@ createServer(async (req, res) => {
       const b = await body(req);
       if (!b.prompt && !b.grab && !b.capture) return send(res, 400, {error: 'prompt required'});
       const id = `j${Date.now().toString(36)}${(++seq).toString(36)}`;
-      jobs.set(id, {id, prompt: b.prompt, refs: b.refs ?? [], topic: b.topic ?? null, chat: b.chat ?? null, mode: b.mode ?? 'here', grab: !!b.grab, capture: !!b.capture, status: 'waiting', step: '', at: Date.now(), created: Date.now()});
+      jobs.set(id, {id, prompt: b.prompt, refs: b.refs ?? [], topic: b.topic ?? null, chat: b.chat ?? null, mode: b.mode ?? 'here', grab: !!b.grab, back: Number(b.back) || 1, capture: !!b.capture, status: 'waiting', step: '', at: Date.now(), created: Date.now()});
       log('job', id, b.topic ? `topic=${b.topic}` : '(new chat)', `${(b.refs ?? []).length} refs`);
       return send(res, 200, {id});
     }
@@ -155,7 +155,7 @@ createServer(async (req, res) => {
       log('start', j.id);
       // where: an explicit conversation, the topic's conversation, a new one, or the tab's current one (default)
       const chatUrl = j.chat || (j.topic && chats[j.topic]) || null;
-      j.payload = {id: j.id, prompt: j.prompt, refs: j.refs, grab: j.grab, capture: j.capture, effort: settings.effort, chatUrl, mode: chatUrl ? 'chat' : j.topic || settings.newChat ? 'new' : j.mode};
+      j.payload = {id: j.id, prompt: j.prompt, refs: j.refs, grab: j.grab, back: j.back, capture: j.capture, effort: settings.effort, chatUrl, mode: chatUrl ? 'chat' : j.topic || settings.newChat ? 'new' : j.mode};
       return send(res, 200, {job: j.payload});
     }
     // the tab reloads while opening a conversation: it asks again for its running job (too big for sessionStorage)
