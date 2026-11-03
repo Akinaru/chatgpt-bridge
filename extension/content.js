@@ -9,7 +9,7 @@ const SEL = {
   fileInput: 'input[type="file"]',
   send: '[data-testid="send-button"], button[type="submit"][aria-label="Send"], button[aria-label="Envoyer"], form button[type="submit"]',
   effort: 'button[data-composer-navigation-target="reasoning"]',
-  menuItem: '[role="menuitem"], [role="menuitemradio"], [role="option"]',
+  menuItem: '[role^="menuitem"], [role="option"], [data-radix-collection-item]',
   stop: '[data-testid="stop-button"]',
   images: 'main img',
   userTurn: '[data-message-author-role="user"]',
@@ -78,16 +78,29 @@ function press(el) {
 
 /** Thinking effort of the composer (owner rule: always "high"). Returns the effort finally selected. */
 async function ensureEffort(level) {
-  const btn = document.querySelector(SEL.effort);
-  if (!btn) return 'none';
-  if (btn.dataset.selectedReasoningEffort === level) return level;
-  press(btn);
-  const want = level === 'high' ? /^(high|élevé|haut)/i : new RegExp('^' + level, 'i');
-  const item = await waitFor(() => [...document.querySelectorAll(SEL.menuItem)].find((m) => want.test(m.textContent.trim())), 5000, `effort menu item ${level}`).catch(() => null);
-  if (item) press(item);
-  await sleep(500);
-  if (document.querySelector('[role="menu"]')) document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
-  return document.querySelector(SEL.effort)?.dataset.selectedReasoningEffort ?? 'unknown';
+  const btn = () => document.querySelector(SEL.effort);
+  if (!btn()) return 'none';
+  if (btn().dataset.selectedReasoningEffort === level) return level;
+  const want = level === 'high' ? /^\s*(high|élevé|haut)/i : new RegExp('^\\s*' + level, 'i');
+  const find = () => [...document.querySelectorAll(SEL.menuItem)].find((m) => want.test(m.textContent));
+  // open the menu: pointer events first, then the keyboard (Radix accepts both)
+  press(btn());
+  let item = await waitFor(find, 2500, 'effort menu').catch(() => null);
+  if (!item) {
+    btn().focus();
+    btn().dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', bubbles: true}));
+    item = await waitFor(find, 2500, 'effort menu').catch(() => null);
+  }
+  if (!item) {
+    const seen = [...document.querySelectorAll(SEL.menuItem)].map((m) => m.textContent.trim().slice(0, 24));
+    say('effort menu: "' + level + '" not found; items seen:', seen.join(' | ') || '(no menu opened)');
+  } else {
+    press(item);
+    item.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', bubbles: true}));
+  }
+  await sleep(600);
+  if (document.querySelector('[role="menu"]')) document.body.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', code: 'Escape', bubbles: true}));
+  return btn()?.dataset.selectedReasoningEffort ?? 'unknown';
 }
 
 async function run(job) {
