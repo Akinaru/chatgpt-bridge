@@ -164,12 +164,6 @@ createServer(async (req, res) => {
       const j = jobs.get(gj[1]);
       return send(res, 200, {job: j && j.status === 'running' ? {...j.payload, navigated: true} : null});
     }
-    // the tab reloads while opening a conversation: it asks again for its running job (too big for sessionStorage)
-    const gj = /^\/ext\/job\/(j[a-z0-9]+)$/.exec(p);
-    if (gj) {
-      const j = jobs.get(gj[1]);
-      return send(res, 200, {job: j && j.status === 'running' ? {...j.payload, navigated: true} : null});
-    }
     const pr = /^\/ext\/progress\/(j[a-z0-9]+)$/.exec(p);
     if (req.method === 'POST' && pr) {
       const b = await body(req);
