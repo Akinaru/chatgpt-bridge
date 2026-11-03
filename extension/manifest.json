@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Aki Labs · ChatGPT bridge",
+  "version": "0.1.0",
+  "description": "Generates images in an open ChatGPT tab for jobs queued by the local Aki Labs bridge (127.0.0.1 only).",
+  "permissions": ["tabs", "storage"],
+  "host_permissions": ["http://127.0.0.1:3777/*", "https://chatgpt.com/*"],
+  "background": {"service_worker": "background.js"},
+  "content_scripts": [{"matches": ["https://chatgpt.com/*"], "js": ["content.js"], "run_at": "document_idle"}],
+  "action": {"default_title": "Aki Labs · ChatGPT bridge", "default_popup": "popup.html"}
+}
