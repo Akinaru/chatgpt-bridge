@@ -34,6 +34,23 @@ Il faut Node 18 ou plus récent. Aucune dépendance.
    - `<dossier>` contient `prompt.txt` et un sous-dossier `refs/`. Les références sont jointes dans l'ordre de leur nom.
 3. L'effort de réflexion est passé sur **High** avant chaque envoi. La console de l'onglet affiche `[aki-bridge] thinking effort: …`.
 
+## Le panneau de l'extension
+Clique sur l'icône de l'extension :
+- **Onglet de travail** : la liste de tes onglets ChatGPT. Clique sur l'onglet qui doit travailler (il est entouré en or). « Aller » t'y emmène. « + Nouvel onglet ChatGPT » en ouvre un et le choisit. « Aucun » met tout en pause.
+- **En cours** : la demande en cours, son étape (envoi des références, génération, récupération), le temps écoulé, un bouton Annuler et la file d'attente.
+- **Réglages** :
+  - l'effort de réflexion appliqué avant chaque envoi : Light, Medium ou High (High par défaut) ;
+  - l'ouverture automatique d'un onglet si aucun ne répond.
+- **Sujets** : chaque sujet et sa conversation. Ouvrir, ou Oublier pour repartir sur une nouvelle conversation.
+- **Historique** : les 20 dernières demandes, avec la vignette, le statut, la durée, et des liens vers l'image et la conversation.
+
+Les données sont dans `~/.aki-chatgpt/` :
+- `history.json` : l'historique ;
+- `images/` : les images ;
+- `chats.json` : les sujets ;
+- `settings.json` : les réglages ;
+- `worker.json` : l'onglet de travail.
+
 ## Garde-fous
 - **Pas d'onglet ChatGPT qui répond** : un avertissement apparaît après 20 s. Au bout de 3 minutes, la demande est annulée.
 - **Pas de réponse pendant une génération** : la demande passe en erreur après 10 minutes.
