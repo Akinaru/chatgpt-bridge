@@ -27,7 +27,8 @@ let seq = 0;
 let lastPoll = 0;
 /** ChatGPT tabs seen by the extension, and the one chosen to do the work (null = not chosen yet). */
 let tabs = [];
-let worker = null;
+const WORKER = path.join(DIR, 'worker.json');
+let worker = fs.existsSync(WORKER) ? JSON.parse(fs.readFileSync(WORKER, 'utf8')).tab ?? null : null;
 const RUN_TIMEOUT = 10 * 60000;
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 
@@ -90,6 +91,7 @@ createServer(async (req, res) => {
     if (req.method === 'POST' && p === '/worker') {
       const b = await body(req);
       worker = b.tab == null ? null : Number(b.tab);
+      fs.writeFileSync(WORKER, JSON.stringify({tab: worker}));
       log('worker tab', worker);
       return send(res, 200, {worker});
     }
