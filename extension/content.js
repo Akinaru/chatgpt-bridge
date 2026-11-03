@@ -7,7 +7,9 @@ if (window.__akiBridgeStop) window.__akiBridgeStop();
 const SEL = {
   composer: '#prompt-textarea, div.ProseMirror[contenteditable="true"], div[contenteditable="true"][role="textbox"], textarea[name="prompt-textarea"], form textarea',
   fileInput: 'input[type="file"]',
-  send: '[data-testid="send-button"]',
+  send: '[data-testid="send-button"], button[type="submit"][aria-label="Send"], button[aria-label="Envoyer"], form button[type="submit"]',
+  effort: 'button[data-composer-navigation-target="reasoning"]',
+  menuItem: '[role="menuitem"], [role="menuitemradio"], [role="option"]',
   stop: '[data-testid="stop-button"]',
   images: 'main [data-message-author-role="assistant"] img',
 };
@@ -63,6 +65,30 @@ async function blobToDataUrl(b) {
   });
 }
 
+/** Radix menus open on pointer events, not on a plain click. */
+function press(el) {
+  const o = {bubbles: true, cancelable: true, pointerType: 'mouse', button: 0};
+  el.dispatchEvent(new PointerEvent('pointerdown', o));
+  el.dispatchEvent(new MouseEvent('mousedown', o));
+  el.dispatchEvent(new PointerEvent('pointerup', o));
+  el.dispatchEvent(new MouseEvent('mouseup', o));
+  el.dispatchEvent(new MouseEvent('click', o));
+}
+
+/** Thinking effort of the composer (owner rule: always "high"). Returns the effort finally selected. */
+async function ensureEffort(level) {
+  const btn = document.querySelector(SEL.effort);
+  if (!btn) return 'none';
+  if (btn.dataset.selectedReasoningEffort === level) return level;
+  press(btn);
+  const want = level === 'high' ? /^(high|élevé|haut)/i : new RegExp('^' + level, 'i');
+  const item = await waitFor(() => [...document.querySelectorAll(SEL.menuItem)].find((m) => want.test(m.textContent.trim())), 5000, `effort menu item ${level}`).catch(() => null);
+  if (item) press(item);
+  await sleep(500);
+  if (document.querySelector('[role="menu"]')) document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
+  return document.querySelector(SEL.effort)?.dataset.selectedReasoningEffort ?? 'unknown';
+}
+
 async function run(job) {
   const progress = (step) => send({type: 'progress', id: job.id, step});
   // 1. right conversation: the topic's chat, or a fresh one
@@ -93,6 +119,9 @@ async function run(job) {
     box.dispatchEvent(new Event('input', {bubbles: true}));
   } else document.execCommand('insertText', false, job.prompt);
   await sleep(800);
+  const effort = await ensureEffort('high');
+  say('thinking effort:', effort);
+  await progress(`effort ${effort}`);
   await progress('waiting uploads');
   const sendBtn = await waitFor(() => {
     const b = document.querySelector(SEL.send);
