@@ -67,12 +67,28 @@ setInterval(() => {
 createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://x');
   const p = url.pathname;
+  // debug drop from the ChatGPT page console (selectors capture): text body, CORS + private-network preflight
+  if (p === '/debug') {
+    res.setHeader('Access-Control-Allow-Origin', 'https://chatgpt.com');
+    res.setHeader('Access-Control-Allow-Private-Network', 'true');
+    res.setHeader('Access-Control-Allow-Headers', 'content-type');
+    if (req.method === 'OPTIONS') return res.writeHead(204).end();
+    const parts = [];
+    req.on('data', (c) => parts.push(c));
+    req.on('end', () => {
+      const f = path.join(DIR, `debug-${Date.now()}.html`);
+      fs.writeFileSync(f, Buffer.concat(parts));
+      log('debug saved', f);
+      send(res, 200, {saved: f});
+    });
+    return;
+  }
   try {
     if (req.method === 'POST' && p === '/jobs') {
       const b = await body(req);
-      if (!b.prompt && !b.grab) return send(res, 400, {error: 'prompt required'});
+      if (!b.prompt && !b.grab && !b.capture) return send(res, 400, {error: 'prompt required'});
       const id = `j${++seq}`;
-      jobs.set(id, {id, prompt: b.prompt, refs: b.refs ?? [], topic: b.topic ?? null, chat: b.chat ?? null, mode: b.mode ?? 'here', grab: !!b.grab, status: 'waiting', step: '', at: Date.now()});
+      jobs.set(id, {id, prompt: b.prompt, refs: b.refs ?? [], topic: b.topic ?? null, chat: b.chat ?? null, mode: b.mode ?? 'here', grab: !!b.grab, capture: !!b.capture, status: 'waiting', step: '', at: Date.now()});
       log('job', id, b.topic ? `topic=${b.topic}` : '(new chat)', `${(b.refs ?? []).length} refs`);
       return send(res, 200, {id});
     }
@@ -109,7 +125,7 @@ createServer(async (req, res) => {
       log('start', j.id);
       // where: an explicit conversation, the topic's conversation, a new one, or the tab's current one (default)
       const chatUrl = j.chat || (j.topic && chats[j.topic]) || null;
-      return send(res, 200, {job: {id: j.id, prompt: j.prompt, refs: j.refs, grab: j.grab, chatUrl, mode: chatUrl ? 'chat' : j.topic ? 'new' : j.mode}});
+      return send(res, 200, {job: {id: j.id, prompt: j.prompt, refs: j.refs, grab: j.grab, capture: j.capture, chatUrl, mode: chatUrl ? 'chat' : j.topic ? 'new' : j.mode}});
     }
     const pr = /^\/ext\/progress\/(j\d+)$/.exec(p);
     if (req.method === 'POST' && pr) {

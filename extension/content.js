@@ -114,6 +114,15 @@ async function run(job) {
     location.href = target;
     return 'navigating';
   }
+  // capture: wait for the owner to open a menu by hand, then send its HTML back (to learn the selectors)
+  if (job.capture) {
+    await progress('capture: open the menu now');
+    const q = '[role="menu"],[role="listbox"],[data-radix-popper-content-wrapper],[data-side]';
+    const el = await waitFor(() => document.querySelector(q), 60000, 'a menu opened by hand');
+    await sleep(400);
+    const html = [...document.querySelectorAll(q)].map((e) => e.outerHTML).join('\n\n');
+    return {image: 'data:text/html;base64,' + btoa(unescape(encodeURIComponent(html))), chatUrl: location.href.split('?')[0], el: !!el};
+  }
   // grab: no generation, just bring back the last generated image of this conversation
   if (job.grab) {
     await progress('grab');
