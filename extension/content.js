@@ -205,8 +205,15 @@ async function run(job) {
     }
     input.files = dt.files;
     input.dispatchEvent(new Event('change', {bubbles: true}));
-    const ok = await waitFor(() => composerImgs() - n0 >= job.refs.length, 90000, 'reference thumbnails').catch(() => false);
-    if (!ok) say('only', composerImgs() - n0, 'of', job.refs.length, 'references visible; sending anyway');
+    let ok = await waitFor(() => composerImgs() - n0 >= job.refs.length, 90000, 'reference thumbnails').catch(() => false);
+    if (!ok) {
+      // never send a prompt without its references: one more try, then the job fails (the agent retries it)
+      say('only', composerImgs() - n0, 'of', job.refs.length, 'references visible; attaching again');
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change', {bubbles: true}));
+      ok = await waitFor(() => composerImgs() - n0 >= job.refs.length, 60000, 'reference thumbnails').catch(() => false);
+      if (!ok) throw new Error(`references not attached (${composerImgs() - n0}/${job.refs.length} visible): prompt NOT sent`);
+    }
     await sleep(1500);
   }
 
