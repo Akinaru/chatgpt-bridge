@@ -155,7 +155,20 @@ createServer(async (req, res) => {
       log('start', j.id);
       // where: an explicit conversation, the topic's conversation, a new one, or the tab's current one (default)
       const chatUrl = j.chat || (j.topic && chats[j.topic]) || null;
-      return send(res, 200, {job: {id: j.id, prompt: j.prompt, refs: j.refs, grab: j.grab, capture: j.capture, effort: settings.effort, chatUrl, mode: chatUrl ? 'chat' : j.topic || settings.newChat ? 'new' : j.mode}});
+      j.payload = {id: j.id, prompt: j.prompt, refs: j.refs, grab: j.grab, capture: j.capture, effort: settings.effort, chatUrl, mode: chatUrl ? 'chat' : j.topic || settings.newChat ? 'new' : j.mode};
+      return send(res, 200, {job: j.payload});
+    }
+    // the tab reloads while opening a conversation: it asks again for its running job (too big for sessionStorage)
+    const gj = /^\/ext\/job\/(j[a-z0-9]+)$/.exec(p);
+    if (gj) {
+      const j = jobs.get(gj[1]);
+      return send(res, 200, {job: j && j.status === 'running' ? {...j.payload, navigated: true} : null});
+    }
+    // the tab reloads while opening a conversation: it asks again for its running job (too big for sessionStorage)
+    const gj = /^\/ext\/job\/(j[a-z0-9]+)$/.exec(p);
+    if (gj) {
+      const j = jobs.get(gj[1]);
+      return send(res, 200, {job: j && j.status === 'running' ? {...j.payload, navigated: true} : null});
     }
     const pr = /^\/ext\/progress\/(j[a-z0-9]+)$/.exec(p);
     if (req.method === 'POST' && pr) {

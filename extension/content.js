@@ -128,7 +128,7 @@ async function run(job) {
   const target = job.mode === 'chat' ? job.chatUrl : job.mode === 'new' ? 'https://chatgpt.com/' : null;
   const there = target && (job.mode === 'new' ? /\/c\//.test(here) : here !== target);
   if (!job.navigated && there) {
-    sessionStorage.setItem(JOB_KEY, JSON.stringify({...job, navigated: true}));
+    sessionStorage.setItem(JOB_KEY, job.id); // only the id: the job comes back from the bridge after the reload
     location.href = target;
     return 'navigating';
   }
@@ -237,7 +237,8 @@ async function tick() {
     const saved = sessionStorage.getItem(JOB_KEY);
     if (saved) {
       sessionStorage.removeItem(JOB_KEY);
-      job = JSON.parse(saved);
+      const r = await send({type: 'getjob', id: saved});
+      job = r.ok ? r.job : null;
     } else {
       const r = await send({type: 'poll'});
       if (!r.ok) say('poll failed:', r.error);
