@@ -266,10 +266,23 @@ async function run(job) {
       quietSince = 0;
       continue;
     }
-    // finished, no image: what did it say?
+    // no image yet and no stop button: image generation keeps going after the text answer ends (placeholder,
+    // "Creating image…"), so only act on a real text reply: a question, a request for files, or a failure
+    const turns = document.querySelectorAll('[data-message-author-role="assistant"]');
+    const lastTurn = turns[turns.length - 1];
+    const inImage = !!lastTurn && (lastTurn.querySelector('img, canvas, [aria-busy="true"]') || /creating image|création de l.image|génération de l.image|generating image/i.test(lastTurn.textContent));
+    if (inImage) {
+      quietSince = 0;
+      continue;
+    }
     quietSince ||= Date.now();
-    if (Date.now() - quietSince < 12000) continue;
+    if (Date.now() - quietSince < 45000) continue;
     const said = lastAnswer();
+    const blocked = /\?|joindre|joins|attach|upload|référence|reference|fail|échou|error|erreur|try again|réessay|cannot|can.t|ne peux|impossible|policy|politique/i.test(said);
+    if (!blocked) {
+      quietSince = 0;
+      continue;
+    }
     if (retries >= 2) throw new Error(`ChatGPT answered without an image: ${said.slice(0, 300)}`);
     retries++;
     say('no image, answer was:', said.slice(0, 200));
