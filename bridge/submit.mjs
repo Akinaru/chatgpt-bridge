@@ -12,12 +12,24 @@ import {fileURLToPath} from 'node:url';
 
 const BRIDGE = 'http://127.0.0.1:3777';
 const argv = process.argv.slice(2);
-const ti = argv.indexOf('--topic');
-const topic = ti >= 0 ? argv[ti + 1] : null;
-if (ti >= 0) argv.splice(ti, 2);
+const opt = (k) => {
+  const i = argv.indexOf(k);
+  if (i < 0) return null;
+  const v = argv[i + 1];
+  argv.splice(i, 2);
+  return v;
+};
+const flag = (k) => {
+  const i = argv.indexOf(k);
+  if (i >= 0) argv.splice(i, 1);
+  return i >= 0;
+};
+const topic = opt('--topic');
+const chat = opt('--chat');
+const mode = flag('--new') ? 'new' : 'here';
 const [jobDir, out] = argv;
 if (!jobDir || !out) {
-  console.log('usage: node bridge/submit.mjs <jobDir> <out.png> [--topic <name>]');
+  console.log('usage: node bridge/submit.mjs <jobDir> <out.png> [--new | --chat <url> | --topic <name>]');
   process.exit(2);
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -44,7 +56,15 @@ const MIME = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', 
 const refs = fs.existsSync(refDir)
   ? fs.readdirSync(refDir).filter((f) => MIME[path.extname(f).toLowerCase()]).sort().map((f) => ({name: f, data: `data:${MIME[path.extname(f).toLowerCase()]};base64,${fs.readFileSync(path.join(refDir, f)).toString('base64')}`}))
   : [];
-const {id} = await (await fetch(`${BRIDGE}/jobs`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({prompt, refs, topic})})).json();
+// guard: a tab must be chosen (never work in someone's conversation by surprise)
+const st = await (await fetch(`${BRIDGE}/ext/status`)).json();
+if (st.worker == null) {
+  console.error('Aucun onglet de travail choisi. Onglets ChatGPT vus :');
+  for (const t of st.tabs ?? []) console.error(`  ${t.id}\t${t.title}\t${t.url}`);
+  console.error('Choisis-en un : node bridge/tabs.mjs use <id>');
+  process.exit(3);
+}
+const {id} = await (await fetch(`${BRIDGE}/jobs`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({prompt, refs, topic, chat, mode})})).json();
 log('job', id, topic ? `topic « ${topic} »` : '(new conversation)', `${refs.length} refs`);
 
 let last = '';

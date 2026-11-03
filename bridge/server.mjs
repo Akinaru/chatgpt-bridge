@@ -25,6 +25,9 @@ const saveChats = () => fs.writeFileSync(CHATS, JSON.stringify(chats, null, 1));
 const jobs = new Map();
 let seq = 0;
 let lastPoll = 0;
+/** ChatGPT tabs seen by the extension, and the one chosen to do the work (null = not chosen yet). */
+let tabs = [];
+let worker = null;
 const RUN_TIMEOUT = 10 * 60000;
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 
@@ -68,7 +71,7 @@ createServer(async (req, res) => {
       const b = await body(req);
       if (!b.prompt) return send(res, 400, {error: 'prompt required'});
       const id = `j${++seq}`;
-      jobs.set(id, {id, prompt: b.prompt, refs: b.refs ?? [], topic: b.topic ?? null, status: 'waiting', step: '', at: Date.now()});
+      jobs.set(id, {id, prompt: b.prompt, refs: b.refs ?? [], topic: b.topic ?? null, chat: b.chat ?? null, mode: b.mode ?? 'here', status: 'waiting', step: '', at: Date.now()});
       log('job', id, b.topic ? `topic=${b.topic}` : '(new chat)', `${(b.refs ?? []).length} refs`);
       return send(res, 200, {id});
     }
@@ -83,16 +86,28 @@ createServer(async (req, res) => {
       if (j && ['waiting', 'running'].includes(j.status)) Object.assign(j, {status: 'error', error: 'cancelled', at: Date.now()});
       return send(res, 200, {ok: true});
     }
-    if (p === '/ext/status') return send(res, 200, {waiting: waiting().length, running: running() ? {id: running().id, step: running().step} : null, extensionSeen: Date.now() - lastPoll < 20000});
+    if (p === '/ext/status') return send(res, 200, {waiting: waiting().length, running: running() ? {id: running().id, step: running().step} : null, extensionSeen: Date.now() - lastPoll < 20000, worker, tabs});
+    if (req.method === 'POST' && p === '/worker') {
+      const b = await body(req);
+      worker = b.tab == null ? null : Number(b.tab);
+      log('worker tab', worker);
+      return send(res, 200, {worker});
+    }
     if (req.method === 'POST' && p === '/ext/next') {
-      await body(req);
+      const nb = await body(req);
       lastPoll = Date.now();
+      if (Array.isArray(nb.tabs)) tabs = nb.tabs;
+      if (worker != null && !tabs.some((t) => t.id === worker)) worker = null; // the chosen tab was closed
+      // only the chosen tab works (never someone's other conversation)
+      if (worker == null || nb.tab !== worker) return send(res, 200, {job: null});
       if (running()) return send(res, 200, {job: null});
       const j = waiting()[0];
       if (!j) return send(res, 200, {job: null});
       Object.assign(j, {status: 'running', at: Date.now(), step: 'start'});
       log('start', j.id);
-      return send(res, 200, {job: {id: j.id, prompt: j.prompt, refs: j.refs, chatUrl: j.topic ? chats[j.topic] ?? null : null}});
+      // where: an explicit conversation, the topic's conversation, a new one, or the tab's current one (default)
+      const chatUrl = j.chat || (j.topic && chats[j.topic]) || null;
+      return send(res, 200, {job: {id: j.id, prompt: j.prompt, refs: j.refs, chatUrl, mode: chatUrl ? 'chat' : j.topic ? 'new' : j.mode}});
     }
     const pr = /^\/ext\/progress\/(j\d+)$/.exec(p);
     if (req.method === 'POST' && pr) {

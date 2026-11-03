@@ -14,7 +14,9 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     try {
       if (msg.type === 'poll') {
         lastSeen = Date.now();
-        reply({ok: true, job: (await call('/ext/next', {tab: sender.tab?.id, url: sender.tab?.url})).job});
+        // every open ChatGPT tab is reported, so the owner can pick the one that works
+        const tabs = (await chrome.tabs.query({url: 'https://chatgpt.com/*'})).map((t) => ({id: t.id, title: t.title, url: t.url, active: t.active}));
+        reply({ok: true, job: (await call('/ext/next', {tab: sender.tab?.id, url: sender.tab?.url, tabs})).job});
       } else if (msg.type === 'progress') {
         await call(`/ext/progress/${msg.id}`, {step: msg.step});
         reply({ok: true});

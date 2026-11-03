@@ -92,10 +92,11 @@ async function ensureEffort(level) {
 
 async function run(job) {
   const progress = (step) => send({type: 'progress', id: job.id, step});
-  // 1. right conversation: the topic's chat, or a fresh one
-  const target = job.chatUrl || 'https://chatgpt.com/';
+  // 1. right conversation: a given one (chat), a fresh one (new), or the one open in this tab (here)
   const here = location.href.split('?')[0];
-  if (!job.navigated && (job.chatUrl ? here !== job.chatUrl : /\/c\//.test(here))) {
+  const target = job.mode === 'chat' ? job.chatUrl : job.mode === 'new' ? 'https://chatgpt.com/' : null;
+  const there = target && (job.mode === 'new' ? /\/c\//.test(here) : here !== target);
+  if (!job.navigated && there) {
     sessionStorage.setItem(JOB_KEY, JSON.stringify({...job, navigated: true}));
     location.href = target;
     return 'navigating';

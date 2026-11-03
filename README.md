@@ -18,15 +18,21 @@ script / Claude ──► pont local (127.0.0.1:3777) ◄── extension (ongle
 Il faut Node 18 ou plus récent. Aucune dépendance.
 
 ## Utilisation
-```bash
-node bridge/submit.mjs <dossier> <sortie.png> [--topic <sujet>]
-```
-- `<dossier>` contient `prompt.txt` et un sous-dossier `refs/`. Les références sont jointes dans l'ordre de leur nom (`1-…`, `2-…`).
-- `--topic` réutilise la conversation de ce sujet (par exemple `wild` ou `accueil`), ce qui garde le contexte. Sans `--topic`, une nouvelle conversation est ouverte.
-- Le pont démarre tout seul si besoin. Tu peux aussi le lancer à la main avec `node bridge/server.mjs`.
-- L'icône de l'extension affiche l'état : pont allumé ou éteint, image en cours.
-
-Les sujets et leurs conversations sont enregistrés dans `~/.aki-chatgpt/chats.json`.
+1. **Choisir l'onglet qui travaille** (une fois). Seul cet onglet reçoit les demandes, jamais une autre de tes conversations.
+   ```bash
+   node bridge/tabs.mjs            # liste les onglets ChatGPT (★ = choisi)
+   node bridge/tabs.mjs use <id>   # cet onglet travaille
+   ```
+2. **Envoyer une image** :
+   ```bash
+   node bridge/submit.mjs <dossier> <sortie.png> [--new | --chat <url> | --topic <sujet>]
+   ```
+   - Sans option : l'image est faite dans la conversation ouverte dans l'onglet choisi. Les demandes suivantes vont au même endroit.
+   - `--new` : ouvre une nouvelle conversation dans cet onglet.
+   - `--chat <url>` : utilise cette conversation précise.
+   - `--topic <sujet>` : utilise la conversation de ce sujet. Elle est créée à la première demande et réutilisée ensuite.
+   - `<dossier>` contient `prompt.txt` et un sous-dossier `refs/`. Les références sont jointes dans l'ordre de leur nom.
+3. L'effort de réflexion est passé sur **High** avant chaque envoi. La console de l'onglet affiche `[aki-bridge] thinking effort: …`.
 
 ## Garde-fous
 - **Pas d'onglet ChatGPT qui répond** : un avertissement apparaît après 20 s. Au bout de 3 minutes, la demande est annulée.
