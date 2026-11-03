@@ -1,71 +1,92 @@
-# Aki Labs · ChatGPT bridge
+# ChatGPT bridge
 
-Génère des images dans **ton** onglet ChatGPT, depuis un script ou Claude Code, sans copier-coller.
-Une image à la fois, faible volume : on reste raisonnable avec le compte.
+Generate images in **your own ChatGPT tab** from a script or an AI agent (Claude Code, Codex…), with no copy-paste.
 
 ```
-script / Claude ──► pont local (127.0.0.1:3777) ◄── extension (onglet chatgpt.com) ──► ChatGPT
+script / agent ──► local bridge (127.0.0.1:3777) ◄── browser extension (your chatgpt.com tab) ──► ChatGPT
 ```
 
-## Installation (une fois)
-1. **Navigateur** : Dia, Chrome, Arc, Brave ou Edge (tout ce qui est basé sur Chromium).
-2. Ouvre la page des extensions (`chrome://extensions`).
-3. Active le **mode développeur**.
-4. Clique sur **Charger l'extension non empaquetée**, puis choisis le dossier `extension/` de ce dépôt.
-5. Ouvre un onglet `https://chatgpt.com`, connecté à ton compte, et laisse-le ouvert.
-   - Si aucun onglet ChatGPT n'est ouvert quand une image est demandée, l'extension en ouvre un en arrière-plan.
+- One image at a time, your account, your browser. Keep the volume low and reasonable.
+- No dependency: Node 18+ and a Chromium browser (Chrome, Dia, Arc, Brave, Edge).
+- The bridge only listens on `127.0.0.1`: nothing is exposed on the network.
 
-Il faut Node 18 ou plus récent. Aucune dépendance.
+## Install (2 minutes, once)
 
-## Utilisation
-1. **Choisir l'onglet qui travaille** (une fois). Seul cet onglet reçoit les demandes, jamais une autre de tes conversations.
-   ```bash
-   node bridge/tabs.mjs            # liste les onglets ChatGPT (★ = choisi)
-   node bridge/tabs.mjs use <id>   # cet onglet travaille
-   ```
-2. **Envoyer une image** :
-   ```bash
-   node bridge/submit.mjs <dossier> <sortie.png> [--new | --chat <url> | --topic <sujet>]
-   ```
-   - Sans option : l'image est faite dans la conversation ouverte dans l'onglet choisi. Les demandes suivantes vont au même endroit.
-   - `--new` : ouvre une nouvelle conversation dans cet onglet.
-   - `--chat <url>` : utilise cette conversation précise.
-   - `--topic <sujet>` : utilise la conversation de ce sujet. Elle est créée à la première demande et réutilisée ensuite.
-   - `<dossier>` contient `prompt.txt` et un sous-dossier `refs/`. Les références sont jointes dans l'ordre de leur nom.
-3. L'effort de réflexion est passé sur **High** avant chaque envoi. La console de l'onglet affiche `[aki-bridge] thinking effort: …`.
+1. Download this repo:
+   `git clone https://github.com/Akinaru/chatgpt-bridge.git`
+2. Load the extension:
+   1. In the browser, open `chrome://extensions`.
+   2. Turn on **Developer mode**, top right.
+   3. Click **Load unpacked**, then choose the `extension/` folder.
+3. Open a tab on **https://chatgpt.com**, logged in. Leave it open.
+4. Click the extension icon, then click the ChatGPT tab that should do the work. It gets a gold outline.
 
-## Le panneau de l'extension
-Clique sur l'icône de l'extension :
-- **Onglet de travail** : la liste de tes onglets ChatGPT. Clique sur l'onglet qui doit travailler (il est entouré en or). « Aller » t'y emmène. « + Nouvel onglet ChatGPT » en ouvre un et le choisit. « Aucun » met tout en pause.
-- **En cours** : la demande en cours, son étape (envoi des références, génération, récupération), le temps écoulé, un bouton Annuler et la file d'attente.
-- **Réglages** :
-  - l'effort de réflexion appliqué avant chaque envoi : Light, Medium ou High (High par défaut) ;
-  - l'ouverture automatique d'un onglet si aucun ne répond.
-- **Sujets** : chaque sujet et sa conversation. Ouvrir, ou Oublier pour repartir sur une nouvelle conversation.
-- **Historique** : les 20 dernières demandes, avec la vignette, le statut, la durée, et des liens vers l'image et la conversation.
+That's it.
 
-Les données sont dans `~/.aki-chatgpt/` :
-- `history.json` : l'historique ;
-- `images/` : les images ;
-- `chats.json` : les sujets ;
-- `settings.json` : les réglages ;
-- `worker.json` : l'onglet de travail.
+## Use
 
-## Garde-fous
-- **Pas d'onglet ChatGPT qui répond** : un avertissement apparaît après 20 s. Au bout de 3 minutes, la demande est annulée.
-- **Pas de réponse pendant une génération** : la demande passe en erreur après 10 minutes.
-- **Réseau** : le pont n'écoute que sur `127.0.0.1`, jamais sur le réseau.
+```bash
+node bridge/submit.mjs <job folder> <output.png> [--topic <name>] [--new]
+```
 
-## Quand ChatGPT change son interface
-Tous les sélecteurs sont en haut de `extension/content.js` (objet `SEL`) :
-- zone de texte ;
-- champ fichier ;
-- bouton envoyer ;
-- bouton stop ;
-- images.
+The job folder contains:
+- `prompt.txt`: the prompt;
+- `refs/`: optional reference images, attached in name order (`1-…png`, `2-…png`).
 
-Adapte-les, puis recharge l'extension (bouton ↻ sur `chrome://extensions`).
+The bridge starts by itself when needed. You can also run it with `node bridge/server.mjs`.
 
-## Limites
-- L'onglet doit rester ouvert. Le navigateur ralentit les onglets en arrière-plan, donc une génération peut prendre un peu plus de temps.
-- C'est ton compte ChatGPT qui travaille : garde un faible volume. Les conditions d'OpenAI encadrent l'usage automatisé. Pour un gros volume, passe par l'API officielle.
+Options:
+
+| Option | What it does |
+|---|---|
+| `--topic <name>` | Reuses the conversation of that topic, so ChatGPT keeps the context. Use one topic per style, for example `ui`, `characters`, `symbols`. |
+| `--new` | Starts a new conversation. |
+| `--chat <url>` | Uses that exact conversation. |
+| `--grab [--back N]` | Downloads the last generated image of the conversation (or the N-th from the end) without generating. |
+
+Without any option, the image is made in the conversation open in the chosen tab.
+
+Example:
+```bash
+mkdir -p job/refs && echo "A cute cartoon cat, flat grey background" > job/prompt.txt
+node bridge/submit.mjs job out.png --topic test
+```
+
+## The extension panel
+Click the icon of the extension:
+- **Working tab**: the ChatGPT tab that does the work. "Go" takes you to it, "+ New ChatGPT tab" opens one, "None" pauses everything.
+- **Current job**: its step, the time elapsed, Cancel, and the queue.
+- **Settings**:
+  - thinking effort, Light, Medium or High (High by default);
+  - a new conversation for every image;
+  - opening a ChatGPT tab when none answers.
+- **Topics and history**: the last images with thumbnails, and links to the image and to the conversation.
+
+## What it handles by itself
+- **References**: shrunk to 1600 px before upload; it waits until they are attached.
+- **Thinking effort**: set before each send.
+- **The result**: detected by ChatGPT's own label ("Generated image"), so a reference is never taken for the result.
+- **ChatGPT answers with text instead of an image** (asks for the files, asks a question, "image generation failed"):
+  1. it re-attaches the files, clicks "Try again" or answers "go on";
+  2. it does this 2 times at most, then the job fails with ChatGPT's answer.
+
+  Nothing stays blocked.
+- **Guards**:
+  - no tab answers: a warning after 20 s, the job is cancelled after 3 min;
+  - a job with no answer: it fails after 10 min.
+
+Data lives in `~/.aki-chatgpt/`:
+- `history.json`: the history;
+- `images/`: the images;
+- `chats.json`: the topics;
+- `settings.json`: the settings;
+- `worker.json`: the working tab.
+
+## When ChatGPT changes its interface
+All the selectors are at the top of `extension/content.js`, in the `SEL` object. Fix them, then click **↻** on the extension in `chrome://extensions`. Open tabs pick up the new version by themselves.
+
+## For AI agents
+See [AGENTS.md](AGENTS.md).
+
+## Note
+This drives the ChatGPT web app with your own account. OpenAI's terms restrict automated use of the web app: use it for a low, personal volume. For volume, use the official OpenAI API.
