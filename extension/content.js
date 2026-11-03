@@ -9,7 +9,6 @@ const SEL = {
   fileInput: 'input[type="file"]',
   send: '[data-testid="send-button"], button[type="submit"][aria-label="Send"], button[aria-label="Envoyer"], form button[type="submit"]',
   effort: 'button[data-composer-navigation-target="reasoning"]',
-  menuItem: '[role^="menuitem"], [role="option"], [data-radix-collection-item]',
   stop: '[data-testid="stop-button"]',
   images: 'main img',
   userTurn: '[data-message-author-role="user"]',
@@ -78,28 +77,47 @@ function press(el) {
 
 /** Thinking effort of the composer (owner rule: always "high"). Returns the effort finally selected. */
 async function ensureEffort(level) {
+  // The effort is a 3-step slider (Light · Medium · High) inside the model menu, moved with the arrow keys.
   const btn = () => document.querySelector(SEL.effort);
   if (!btn()) return 'none';
   if (btn().dataset.selectedReasoningEffort === level) return level;
-  const want = level === 'high' ? /^\s*(high|élevé|haut)/i : new RegExp('^\\s*' + level, 'i');
-  const find = () => [...document.querySelectorAll(SEL.menuItem)].find((m) => want.test(m.textContent));
-  // open the menu: pointer events first, then the keyboard (Radix accepts both)
-  press(btn());
-  let item = await waitFor(find, 2500, 'effort menu').catch(() => null);
-  if (!item) {
-    btn().focus();
-    btn().dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', bubbles: true}));
-    item = await waitFor(find, 2500, 'effort menu').catch(() => null);
+  const slider = () => document.querySelector('[data-reasoning-slider="true"]');
+  const value = () => Number(document.querySelector('[data-model-picker-power-slider] [role="slider"], [role="slider"][aria-valuemax]')?.getAttribute('aria-valuenow') ?? -1);
+  const max = () => Number(document.querySelector('[role="slider"][aria-valuemax]')?.getAttribute('aria-valuemax') ?? 2);
+  const o = {bubbles: true, cancelable: true, pointerType: 'mouse', button: 0, isPrimary: true, pointerId: 1};
+  // open the menu: several ways, one at a time (a second one would close it again)
+  const openers = [
+    () => btn().dispatchEvent(new PointerEvent('pointerdown', o)),
+    () => btn().click(),
+    () => (btn().focus(), btn().dispatchEvent(new KeyboardEvent('keydown', {key: 'ArrowDown', code: 'ArrowDown', bubbles: true}))),
+    () => (btn().focus(), btn().dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', bubbles: true}))),
+  ];
+  let opened = false;
+  for (const open of openers) {
+    open();
+    if (await waitFor(slider, 1500, 'effort slider').catch(() => null)) {
+      opened = true;
+      break;
+    }
   }
-  if (!item) {
-    const seen = [...document.querySelectorAll(SEL.menuItem)].map((m) => m.textContent.trim().slice(0, 24));
-    say('effort menu: "' + level + '" not found; items seen:', seen.join(' | ') || '(no menu opened)');
-  } else {
-    press(item);
-    item.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', bubbles: true}));
+  if (!opened) {
+    say('effort: model menu did not open');
+    return btn().dataset.selectedReasoningEffort;
   }
-  await sleep(600);
-  if (document.querySelector('[role="menu"]')) document.body.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', code: 'Escape', bubbles: true}));
+  const target = level === 'high' ? max() : level === 'low' ? 0 : 1;
+  for (let i = 0; i < 4 && value() !== target; i++) {
+    const key = value() < target ? 'ArrowRight' : 'ArrowLeft';
+    slider().focus();
+    slider().dispatchEvent(new KeyboardEvent('keydown', {key, code: key, bubbles: true}));
+    const thumb = document.querySelector('[role="slider"][aria-valuemax]');
+    thumb?.dispatchEvent(new KeyboardEvent('keydown', {key, code: key, bubbles: true}));
+    await sleep(250);
+  }
+  say('effort slider value', value(), '/', max());
+  document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', code: 'Escape', bubbles: true}));
+  await sleep(400);
+  if (slider()) document.body.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', code: 'Escape', bubbles: true}));
+  await sleep(300);
   return btn()?.dataset.selectedReasoningEffort ?? 'unknown';
 }
 
