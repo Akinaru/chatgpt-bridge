@@ -73,6 +73,7 @@ log('job', id, topic ? `topic « ${topic} »` : '(new conversation)', `${refs.le
 let last = '';
 let warned = false;
 const t0 = Date.now();
+let tRun = 0;
 for (;;) {
   await sleep(2000);
   const j = await (await fetch(`${BRIDGE}/jobs/${id}`)).json();
@@ -87,8 +88,10 @@ for (;;) {
     console.error('ERREUR : pas d’onglet ChatGPT après 3 min.');
     process.exit(1);
   }
-  // an image takes 1 to 3 min: past 4 min of generation the tab is stuck, give up instead of waiting forever
-  if (j.status !== 'waiting' && j.status !== 'done' && Date.now() - t0 > 4 * 60000) {
+  // an image takes 1 to 3 min: past 4 min of generation (counted from the start of the run, not the queue) the tab
+  // is stuck, give up instead of waiting forever
+  if (j.status !== 'waiting' && !tRun) tRun = Date.now();
+  if (tRun && j.status !== 'done' && Date.now() - tRun > 4 * 60000) {
     await fetch(`${BRIDGE}/jobs/${id}`, {method: 'DELETE'}).catch(() => {});
     console.error('ERREUR : génération bloquée (plus de 4 min), job annulé.');
     process.exit(1);

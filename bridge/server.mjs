@@ -24,6 +24,7 @@ const saveChats = () => fs.writeFileSync(CHATS, JSON.stringify(chats, null, 1));
 /** id → {id, prompt, refs, topic, status: waiting|running|done|error, step, image, chatUrl, error, at} */
 const jobs = new Map();
 let seq = 0;
+const control = {reload: false};
 let lastPoll = 0;
 /** ChatGPT tabs seen by the extension, and the one chosen to do the work (null = not chosen yet). */
 let tabs = [];
@@ -111,6 +112,18 @@ createServer(async (req, res) => {
         tabs,
         settings,
       });
+    }
+    // remote control of the extension (agents can update and reload it without touching the browser)
+    if (req.method === 'POST' && p === '/ext/control') {
+      const b = await body(req);
+      if (b.reload) control.reload = true;
+      log('control', JSON.stringify(b));
+      return send(res, 200, {ok: true});
+    }
+    if (p === '/ext/control') {
+      const c = {...control};
+      control.reload = false;
+      return send(res, 200, c);
     }
     if (p === '/history') return send(res, 200, {history, topics: chats, settings});
     const im = /^\/images\/(j[a-z0-9]+\.(png|jpg|webp))$/.exec(p);

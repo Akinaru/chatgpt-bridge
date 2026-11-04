@@ -34,19 +34,51 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   return true;
 });
 
-// Guard: a job is waiting but no ChatGPT tab is polling → open one (in the background).
+// Guard (every 10 s while awake, and every 30 s through chrome.alarms, which wakes the service worker):
+// - the working tab is never discarded (autoDiscardable false);
+// - a job is waiting and no ChatGPT tab polls: wake the working tab (bring it to the front, focus its window); if it
+//   still does not answer after 45 s, reload it; no tab at all: open one;
+// - the bridge asks for an extension reload (after an update): chrome.runtime.reload().
+let wokeAt = 0;
 async function guard() {
   try {
     const s = await call('/ext/status');
-    if (!s.waiting || Date.now() - lastSeen < 15000 || s.settings?.autoOpenTab === false) return;
+    const ctl = await call('/ext/control').catch(() => ({}));
+    if (ctl.reload) {
+      console.warn('[aki-bridge] reload requested by the bridge');
+      chrome.runtime.reload();
+      return;
+    }
     const tabs = await chrome.tabs.query({url: 'https://chatgpt.com/*'});
-    if (!tabs.length) await chrome.tabs.create({url: 'https://chatgpt.com/', active: false});
-    else if (tabs[0].discarded) await chrome.tabs.reload(tabs[0].id);
+    const w = tabs.find((t) => t.id === s.worker);
+    if (w && w.autoDiscardable !== false) await chrome.tabs.update(w.id, {autoDiscardable: false}).catch(() => {});
+    if (!s.waiting || Date.now() - lastSeen < 15000 || s.settings?.autoOpenTab === false && !w) return;
+    if (!tabs.length) {
+      await chrome.tabs.create({url: 'https://chatgpt.com/', active: true});
+      return;
+    }
+    const t = w ?? tabs[0];
+    if (t.discarded) {
+      await chrome.tabs.reload(t.id);
+      wokeAt = Date.now();
+      return;
+    }
+    if (!wokeAt || Date.now() - wokeAt > 120000) {
+      // a hidden tab is throttled by the browser: bring it to the front so its script runs at full speed
+      await chrome.tabs.update(t.id, {active: true}).catch(() => {});
+      await chrome.windows.update(t.windowId, {focused: true}).catch(() => {});
+      wokeAt = Date.now();
+    } else if (Date.now() - wokeAt > 45000) {
+      await chrome.tabs.reload(t.id).catch(() => {});
+      wokeAt = Date.now();
+    }
   } catch {
     // bridge not running: nothing to do
   }
 }
 setInterval(guard, 10000);
+chrome.alarms.create('aki-guard', {periodInMinutes: 0.5});
+chrome.alarms.onAlarm.addListener((a) => a.name === 'aki-guard' && guard());
 chrome.runtime.onStartup.addListener(guard);
 chrome.runtime.onInstalled.addListener(guard);
 
