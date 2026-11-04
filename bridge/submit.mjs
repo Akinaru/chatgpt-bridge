@@ -87,6 +87,12 @@ for (;;) {
     console.error('ERREUR : pas d’onglet ChatGPT après 3 min.');
     process.exit(1);
   }
+  // an image takes 1 to 3 min: past 4 min of generation the tab is stuck, give up instead of waiting forever
+  if (j.status !== 'waiting' && j.status !== 'done' && Date.now() - t0 > 4 * 60000) {
+    await fetch(`${BRIDGE}/jobs/${id}`, {method: 'DELETE'}).catch(() => {});
+    console.error('ERREUR : génération bloquée (plus de 4 min), job annulé.');
+    process.exit(1);
+  }
   if (j.status === 'error') {
     console.error('ERREUR :', j.error);
     process.exit(1);
