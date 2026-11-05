@@ -127,7 +127,8 @@ for (;;) {
   }
   // an image takes 1 to 3 min: past 4 min of generation (counted from the start of the run, not the queue) the tab
   // is stuck, give up instead of waiting forever
-  if (j.status !== 'waiting' && !tRun) tRun = Date.now();
+  if (j.status === 'waiting') tRun = 0; // requeued by the bridge (tab reloaded before sending): the clock restarts
+  else if (!tRun) tRun = Date.now();
   if (tRun && j.status !== 'done' && Date.now() - tRun > 4 * 60000) {
     await fetch(`${BRIDGE}/jobs/${id}`, {method: 'DELETE'}).catch(() => {});
     console.error('ERREUR : génération bloquée (plus de 4 min), job annulé.');

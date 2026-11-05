@@ -189,6 +189,19 @@ createServer(async (req, res) => {
       if (worker != null && !tabs.some((t) => t.id === worker)) worker = null; // the chosen tab was closed
       // only the chosen tab works (never someone's other conversation)
       if (worker == null || nb.tab !== worker || paused) return send(res, 200, {job: null});
+      const r = running();
+      // the working tab asks for a new job while one runs: its page was reloaded (by ChatGPT or by hand) and the
+      // script that ran the job is gone. Nothing sent yet: hand it out again once. Sent: never resend, fail it.
+      if (r && Date.now() - r.at > 5000) {
+        if (!r.sends && !r.requeued) {
+          Object.assign(r, {status: 'waiting', step: 'requeued (tab reloaded)', requeued: true});
+          log(r.id, 'tab reloaded before sending: requeued');
+        } else {
+          Object.assign(r, {status: 'error', at: Date.now(), error: r.sends ? 'tab reloaded while ChatGPT was generating: the image may be in the conversation, fetch it with --grab, do not resubmit blindly' : 'tab reloaded twice before sending'});
+          remember(r);
+          log(r.id, 'error', r.error);
+        }
+      }
       if (running()) return send(res, 200, {job: null});
       const j = waiting()[0];
       if (!j) return send(res, 200, {job: null});
