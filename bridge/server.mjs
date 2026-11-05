@@ -25,6 +25,15 @@ const saveChats = () => fs.writeFileSync(CHATS, JSON.stringify(chats, null, 1));
 const jobs = new Map();
 let seq = 0;
 const control = {reload: false};
+/** Pause: no job is handed to the tab (set when ChatGPT says the quota is reached or the account is logged out). */
+const PAUSE = path.join(DIR, 'pause.json');
+let paused = fs.existsSync(PAUSE) ? JSON.parse(fs.readFileSync(PAUSE, 'utf8')) : null;
+const setPause = (p) => {
+  paused = p;
+  if (p) fs.writeFileSync(PAUSE, JSON.stringify(p));
+  else fs.rmSync(PAUSE, {force: true});
+  log('pause', p ? p.reason : 'off');
+};
 let lastPoll = 0;
 /** ChatGPT tabs seen by the extension, and the one chosen to do the work (null = not chosen yet). */
 let tabs = [];
@@ -39,7 +48,7 @@ const history = fs.existsSync(HISTORY) ? JSON.parse(fs.readFileSync(HISTORY, 'ut
 const SETTINGS = path.join(DIR, 'settings.json');
 const settings = {effort: 'high', autoOpenTab: true, newChat: false, ...(fs.existsSync(SETTINGS) ? JSON.parse(fs.readFileSync(SETTINGS, 'utf8')) : {})};
 function remember(j) {
-  const h = {id: j.id, topic: j.topic, kind: j.grab ? 'grab' : j.capture ? 'capture' : 'image', status: j.status, error: j.error, chatUrl: j.chatUrl, prompt: (j.prompt || '').slice(0, 140), refs: (j.refs || []).length, created: j.created, ended: Date.now(), image: j.file ? path.basename(j.file) : null};
+  const h = {id: j.id, sends: j.sends || 0, topic: j.topic, kind: j.grab ? 'grab' : j.capture ? 'capture' : 'image', status: j.status, error: j.error, chatUrl: j.chatUrl, prompt: (j.prompt || '').slice(0, 140), refs: (j.refs || []).length, created: j.created, ended: Date.now(), image: j.file ? path.basename(j.file) : null};
   history.unshift(h);
   history.splice(50);
   fs.writeFileSync(HISTORY, JSON.stringify(history, null, 1));
@@ -85,8 +94,16 @@ createServer(async (req, res) => {
     if (req.method === 'POST' && p === '/jobs') {
       const b = await body(req);
       if (!b.prompt && !b.grab && !b.capture) return send(res, 400, {error: 'prompt required'});
+      if (paused) return send(res, 409, {error: `bridge paused: ${paused.reason}`, paused});
+      // the same request already queued or running (a retried script): reuse it, never generate twice
+      const sig = JSON.stringify([b.prompt ?? '', b.topic ?? null, b.chat ?? null, (b.refs ?? []).map((r) => (r.data ?? '').length), !!b.grab, Number(b.back) || 1]);
+      const same = [...jobs.values()].find((j) => j.sig === sig && ['waiting', 'running'].includes(j.status));
+      if (same) {
+        log('duplicate request, reusing', same.id);
+        return send(res, 200, {id: same.id, duplicate: true});
+      }
       const id = `j${Date.now().toString(36)}${(++seq).toString(36)}`;
-      jobs.set(id, {id, prompt: b.prompt, refs: b.refs ?? [], topic: b.topic ?? null, chat: b.chat ?? null, mode: b.mode ?? 'here', grab: !!b.grab, back: Number(b.back) || 1, capture: !!b.capture, status: 'waiting', step: '', at: Date.now(), created: Date.now()});
+      jobs.set(id, {id, prompt: b.prompt, refs: b.refs ?? [], topic: b.topic ?? null, chat: b.chat ?? null, mode: b.mode ?? 'here', grab: !!b.grab, back: Number(b.back) || 1, capture: !!b.capture, sig, sends: 0, status: 'waiting', step: '', at: Date.now(), created: Date.now()});
       log('job', id, b.topic ? `topic=${b.topic}` : '(new chat)', `${(b.refs ?? []).length} refs`);
       return send(res, 200, {id});
     }
@@ -108,6 +125,7 @@ createServer(async (req, res) => {
         queue: waiting().map((j) => ({id: j.id, topic: j.topic, prompt: (j.prompt || '').slice(0, 80)})),
         running: r ? {id: r.id, step: r.step, topic: r.topic, since: r.at, prompt: (r.prompt || '').slice(0, 80)} : null,
         extensionSeen: Date.now() - lastPoll < 20000,
+        paused,
         worker,
         tabs,
         settings,
@@ -124,6 +142,16 @@ createServer(async (req, res) => {
       const c = {...control};
       control.reload = false;
       return send(res, 200, c);
+    }
+    if (req.method === 'POST' && p === '/resume') {
+      setPause(null);
+      return send(res, 200, {ok: true});
+    }
+    // the tab asks, while it works, whether its job is still wanted (cancelled / timed out: it stops ChatGPT at once)
+    const al = /^\/ext\/alive\/(j[a-z0-9]+)$/.exec(p);
+    if (al) {
+      const j = jobs.get(al[1]);
+      return send(res, 200, {alive: !!j && j.status === 'running'});
     }
     if (p === '/history') return send(res, 200, {history, topics: chats, settings});
     const im = /^\/images\/(j[a-z0-9]+\.(png|jpg|webp))$/.exec(p);
@@ -160,7 +188,7 @@ createServer(async (req, res) => {
       if (Array.isArray(nb.tabs)) tabs = nb.tabs;
       if (worker != null && !tabs.some((t) => t.id === worker)) worker = null; // the chosen tab was closed
       // only the chosen tab works (never someone's other conversation)
-      if (worker == null || nb.tab !== worker) return send(res, 200, {job: null});
+      if (worker == null || nb.tab !== worker || paused) return send(res, 200, {job: null});
       if (running()) return send(res, 200, {job: null});
       const j = waiting()[0];
       if (!j) return send(res, 200, {job: null});
@@ -182,6 +210,7 @@ createServer(async (req, res) => {
       const b = await body(req);
       const j = jobs.get(pr[1]);
       if (j) (j.step = b.step), log(j.id, b.step);
+      if (j && b.sent) j.sends = (j.sends || 0) + 1; // one more message sent to ChatGPT (each one can make an image)
       return send(res, 200, {ok: true});
     }
     const rr = /^\/ext\/result\/(j[a-z0-9]+)$/.exec(p);
@@ -189,6 +218,14 @@ createServer(async (req, res) => {
       const b = await body(req);
       const j = jobs.get(rr[1]);
       if (!j) return send(res, 404, {error: 'unknown job'});
+      if (b.pause) setPause({reason: b.pause, at: Date.now(), detail: String(b.error || '').slice(0, 300)});
+      if (j.status !== 'running') {
+        // cancelled or timed out meanwhile: keep that status, only log what the tab did
+        // an image that arrives late was still paid with quota: keep the file so it is not lost
+        if (b.image && String(b.image).startsWith('data:image/')) fs.writeFileSync(path.join(IMAGES, `${j.id}-late.png`), Buffer.from(String(b.image).split(',')[1] ?? '', 'base64'));
+        log(j.id, 'late result ignored', b.error ?? 'image kept as late');
+        return send(res, 200, {ok: true});
+      }
       if (b.error) Object.assign(j, {status: 'error', error: b.error, at: Date.now()});
       else {
         Object.assign(j, {status: 'done', image: b.image, chatUrl: b.chatUrl, at: Date.now()});

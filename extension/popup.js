@@ -34,8 +34,12 @@ function render() {
     $('now').textContent = '—';
     return;
   }
-  pill.className = `pill ${status.running ? 'run' : status.worker != null ? 'ok' : 'ko'}`;
-  pill.textContent = status.running ? 'génération…' : status.worker != null ? 'prêt' : 'choisis un onglet';
+  pill.className = `pill ${status.paused ? 'ko' : status.running ? 'run' : status.worker != null ? 'ok' : 'ko'}`;
+  pill.textContent = status.paused ? 'en pause' : status.running ? 'génération…' : status.worker != null ? 'prêt' : 'choisis un onglet';
+  const why = {quota: 'quota ChatGPT atteint', 'logged out': 'ChatGPT déconnecté'};
+  $('pause').innerHTML = status.paused
+    ? `<div class="card"><b>En pause : ${esc(why[status.paused.reason] ?? status.paused.reason)}</b><div class="small muted">${esc(status.paused.detail || '')}</div><div class="small">Aucune image ne part tant que tu ne reprends pas.</div><div class="row"><button id="resume">Reprendre</button></div></div>`
+    : '';
   $('foot').textContent = status.extensionSeen ? 'Onglet de travail connecté.' : 'Aucun onglet ne répond pour l’instant.';
   renderTabs();
   // current job + queue
@@ -65,7 +69,7 @@ function render() {
           const img = j.image && !j.image.endsWith('.html') ? `<img src="${B}/images/${esc(j.image)}" alt="" />` : `<div class="ph">${j.kind === 'capture' ? '⌘' : j.status === 'error' ? '!' : '·'}</div>`;
           const dur = j.created ? `${Math.round((j.ended - j.created) / 1000)} s` : '';
           return `<div class="job">${img}<div class="t"><b>${esc(j.topic || (j.kind === 'grab' ? 'récupération' : j.kind === 'capture' ? 'capture' : 'image'))} <span class="st ${j.status}">${j.status === 'done' ? 'ok' : 'erreur'}</span></b>
-            <span>${esc(j.error || j.prompt || '')}</span><span>il y a ${ago(j.ended)} · ${dur}${j.refs ? ` · ${j.refs} réf.` : ''}</span></div>
+            <span>${esc(j.error || j.prompt || '')}</span><span>il y a ${ago(j.ended)} · ${dur}${j.refs ? ` · ${j.refs} réf.` : ''}${j.sends > 1 ? ` · ⚠ ${j.sends} envois` : ''}</span></div>
             <span class="acts">${j.image && !j.image.endsWith('.html') ? `<button data-url="${B}/images/${esc(j.image)}">Voir</button>` : ''}${j.chatUrl ? `<button data-open="${esc(j.chatUrl)}">Chat</button>` : ''}</span></div>`;
         })
         .join('')
@@ -82,7 +86,7 @@ async function renderTabs() {
 }
 
 document.addEventListener('click', async (e) => {
-  const el = e.target.closest('[data-tab],[data-goto],[data-cancel],[data-open],[data-url],[data-forget],[data-v],#newtab,#untarget,#clear');
+  const el = e.target.closest('[data-tab],[data-goto],[data-cancel],[data-open],[data-url],[data-forget],[data-v],#newtab,#untarget,#clear,#resume');
   if (!el) return;
   if (el.dataset.goto) {
     e.stopPropagation();
@@ -103,6 +107,7 @@ document.addEventListener('click', async (e) => {
   else if (el.dataset.forget) await api('/topics/forget', {topic: el.dataset.forget});
   else if (el.dataset.v) await api('/settings', {effort: el.dataset.v});
   else if (el.id === 'clear') await api('/history/clear', {});
+  else if (el.id === 'resume') await api('/resume', {});
   refresh();
 });
 $('newchat').addEventListener('change', async (e) => {

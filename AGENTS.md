@@ -33,11 +33,31 @@ You can generate images through the user's ChatGPT tab. Follow this exactly.
 - Give the exact format (e.g. "square 1:1", "portrait 2:3") and say what must not appear (text, watermark…).
 - Refer to references by number ("reference 1"), in the order of the `refs/` files.
 
+## Safety rules built in (do not work around them)
+- **One message = one image, at most one automatic retry.** The tab re-sends only when ChatGPT clearly made no image
+  (it asks for the references, or shows a failure with a retry button). A question or any other text fails the job:
+  read it, fix the prompt, then submit again yourself.
+- **Stopping `submit.mjs` cancels the job** (Ctrl-C, kill, timeout): the tab clicks ChatGPT's stop button and sends
+  nothing more. Never leave a job running in the background without its `submit.mjs`.
+- **Same request twice = one job**: a second identical `submit.mjs` waits for the first one instead of generating again.
+- **References are checked after sending**: if our message shows fewer images than `refs/`, ChatGPT is stopped and the
+  job fails (`message sent with n/m references`).
+- **Pause**: when ChatGPT is logged out or says the quota is reached, the bridge pauses and refuses every job
+  (`submit.mjs` exits 4 with `pont en pause`). Tell the user; only they resume it (popup button « Reprendre », or
+  `curl -X POST http://127.0.0.1:3777/resume`). Never resume on your own.
+- An image that arrives after its job was cancelled is still saved in `~/.aki-chatgpt/images/<id>-late.png` (it was
+  paid with quota). The popup history shows `⚠ n envois` when a job sent more than one message.
+- Chrome is never brought to the front: the working tab is woken by a message. Put the ChatGPT tab in its own Chrome
+  window, not minimised, so the browser does not slow it down.
+
 ## When it fails
 | Error | What to do |
 |---|---|
 | `no ChatGPT tab` / `Aucun onglet de travail choisi` | Ask the user to open chatgpt.com and choose the tab (extension icon, or `bridge/tabs.mjs use <id>`). |
 | `ChatGPT answered without an image: …` | Read the quoted answer and fix the prompt (content refused, too vague). |
+| `pont en pause (quota)` / `(logged out)` | Stop. Tell the user. Do not retry until they resume the bridge. |
+| `message sent with n/m references` | Check the `refs/` files (format, size), then submit again once. |
+| `le pont ne répond plus` / `ne connaît plus ce job` | The bridge restarted. Fetch the image with `--grab` before submitting again. |
 | `timeout: composer`, `timeout: …` | ChatGPT's interface changed. Tell the user the selectors in `extension/content.js` (`SEL`) need updating. |
 
 Keep the volume low: this is the user's personal ChatGPT account.

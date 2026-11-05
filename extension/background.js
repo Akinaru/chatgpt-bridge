@@ -1,5 +1,5 @@
 // Talks to the local bridge (http://127.0.0.1:3777) for the ChatGPT tab's content script, which cannot reach it itself.
-// If a job is waiting and no ChatGPT tab is open, it opens one in the background.
+// If a job is waiting and no ChatGPT tab is open, it opens one in the background (never brings Chrome to the front).
 const BRIDGE = 'http://127.0.0.1:3777';
 let lastSeen = 0;
 
@@ -17,13 +17,15 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
         // every open ChatGPT tab is reported, so the owner can pick the one that works
         const tabs = (await chrome.tabs.query({url: 'https://chatgpt.com/*'})).map((t) => ({id: t.id, title: t.title, url: t.url, active: t.active}));
         reply({ok: true, job: (await call('/ext/next', {tab: sender.tab?.id, url: sender.tab?.url, tabs})).job});
+      } else if (msg.type === 'alive') {
+        reply({ok: true, alive: (await call(`/ext/alive/${msg.id}`)).alive});
       } else if (msg.type === 'getjob') {
         reply({ok: true, job: (await call(`/ext/job/${msg.id}`)).job});
       } else if (msg.type === 'progress') {
-        await call(`/ext/progress/${msg.id}`, {step: msg.step});
+        await call(`/ext/progress/${msg.id}`, {step: msg.step, sent: !!msg.sent});
         reply({ok: true});
       } else if (msg.type === 'result') {
-        await call(`/ext/result/${msg.id}`, {image: msg.image, chatUrl: msg.chatUrl, error: msg.error});
+        await call(`/ext/result/${msg.id}`, {image: msg.image, chatUrl: msg.chatUrl, error: msg.error, pause: msg.pause});
         reply({ok: true});
       } else reply({ok: false, error: 'unknown message'});
     } catch (e) {
@@ -36,8 +38,10 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 
 // Guard (every 10 s while awake, and every 30 s through chrome.alarms, which wakes the service worker):
 // - the working tab is never discarded (autoDiscardable false);
-// - a job is waiting and no ChatGPT tab polls: wake the working tab (bring it to the front, focus its window); if it
-//   still does not answer after 45 s, reload it; no tab at all: open one;
+// - it is woken by a message (a hidden tab's own timers are slowed down), never by bringing Chrome to the front: the
+//   owner's screen must not jump to the browser;
+// - a job is waiting and the working tab does not poll for 45 s (and nothing is running): reload it; no tab at all:
+//   open one in the background (if allowed in the settings);
 // - the bridge asks for an extension reload (after an update): chrome.runtime.reload().
 let wokeAt = 0;
 async function guard() {
@@ -52,25 +56,23 @@ async function guard() {
     const tabs = await chrome.tabs.query({url: 'https://chatgpt.com/*'});
     const w = tabs.find((t) => t.id === s.worker);
     if (w && w.autoDiscardable !== false) await chrome.tabs.update(w.id, {autoDiscardable: false}).catch(() => {});
-    if (!s.waiting || Date.now() - lastSeen < 15000 || s.settings?.autoOpenTab === false && !w) return;
+    if (w && !w.discarded && (s.waiting || s.running)) chrome.tabs.sendMessage(w.id, {type: 'wake'}).catch(() => {});
+    if (Date.now() - lastSeen < 15000) wokeAt = 0; // the tab answers: no reload pending
+    if (s.paused || !s.waiting || s.running || Date.now() - lastSeen < 15000) return;
     if (!tabs.length) {
-      await chrome.tabs.create({url: 'https://chatgpt.com/', active: true});
+      if (s.settings?.autoOpenTab !== false) await chrome.tabs.create({url: 'https://chatgpt.com/', active: false});
       return;
     }
-    const t = w ?? tabs[0];
-    if (t.discarded) {
-      await chrome.tabs.reload(t.id);
+    if (!w) return; // no working tab chosen: never use another conversation on our own
+    if (w.discarded) {
+      await chrome.tabs.reload(w.id);
       wokeAt = Date.now();
       return;
     }
-    if (!wokeAt || Date.now() - wokeAt > 120000) {
-      // a hidden tab is throttled by the browser: bring it to the front so its script runs at full speed
-      await chrome.tabs.update(t.id, {active: true}).catch(() => {});
-      await chrome.windows.update(t.windowId, {focused: true}).catch(() => {});
-      wokeAt = Date.now();
-    } else if (Date.now() - wokeAt > 45000) {
-      await chrome.tabs.reload(t.id).catch(() => {});
-      wokeAt = Date.now();
+    if (!wokeAt) wokeAt = Date.now();
+    else if (Date.now() - wokeAt > 45000) {
+      await chrome.tabs.reload(w.id).catch(() => {});
+      wokeAt = 0;
     }
   } catch {
     // bridge not running: nothing to do

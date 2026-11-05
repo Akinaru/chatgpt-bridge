@@ -10,7 +10,7 @@ import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
-const BRIDGE = 'http://127.0.0.1:3777';
+const BRIDGE = process.env.AKI_BRIDGE || 'http://127.0.0.1:3777';
 const argv = process.argv.slice(2);
 const opt = (k) => {
   const i = argv.indexOf(k);
@@ -67,16 +67,53 @@ if (st.worker == null) {
   console.error('Choisis-en un : node bridge/tabs.mjs use <id>');
   process.exit(3);
 }
-const {id} = await (await fetch(`${BRIDGE}/jobs`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({prompt, refs, topic, chat, mode, grab, back, capture})})).json();
-log('job', id, topic ? `topic « ${topic} »` : '(new conversation)', `${refs.length} refs`);
+if (st.paused) {
+  console.error(`ERREUR : pont en pause (${st.paused.reason}) : ${st.paused.detail || ''}`);
+  console.error('Rien n’est envoyé. Quand c’est réglé : bouton « Reprendre » dans la popup, ou curl -X POST http://127.0.0.1:3777/resume');
+  process.exit(4);
+}
+const created = await (await fetch(`${BRIDGE}/jobs`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({prompt, refs, topic, chat, mode, grab, back, capture})})).json();
+if (created.error) {
+  console.error('ERREUR :', created.error);
+  process.exit(4);
+}
+const {id} = created;
+log('job', id, created.duplicate ? '(même demande déjà en cours : on l’attend, pas de 2e image)' : '', topic ? `topic « ${topic} »` : '(new conversation)', `${refs.length} refs`);
+// this script stopped (Ctrl-C, killed by an agent): cancel the job, so the tab stops instead of generating in the dark
+let finished = false;
+const cancel = async (sig) => {
+  if (!finished) await fetch(`${BRIDGE}/jobs/${id}`, {method: 'DELETE'}).catch(() => {});
+  console.error(`arrêté (${sig}) : job ${id} annulé`);
+  process.exit(130);
+};
+process.on('SIGINT', () => cancel('SIGINT'));
+process.on('SIGTERM', () => cancel('SIGTERM'));
+process.on('SIGHUP', () => cancel('SIGHUP'));
 
 let last = '';
 let warned = false;
 const t0 = Date.now();
 let tRun = 0;
+let downSince = 0;
 for (;;) {
   await sleep(2000);
-  const j = await (await fetch(`${BRIDGE}/jobs/${id}`)).json();
+  let j;
+  try {
+    j = await (await fetch(`${BRIDGE}/jobs/${id}`)).json();
+    downSince = 0;
+  } catch {
+    // the bridge stopped: do not resend (an image may still be on its way in the tab), say it and stop
+    downSince ||= Date.now();
+    if (Date.now() - downSince > 30000) {
+      console.error('ERREUR : le pont ne répond plus. Une image a peut-être quand même été générée : vérifie la conversation (--grab) avant de relancer.');
+      process.exit(1);
+    }
+    continue;
+  }
+  if (j.error === 'unknown job') {
+    console.error('ERREUR : le pont a redémarré et ne connaît plus ce job. Vérifie la conversation (--grab) avant de relancer.');
+    process.exit(1);
+  }
   const line = `${j.status}${j.step ? ' · ' + j.step : ''}`;
   if (line !== last) log(line), (last = line);
   if (j.status === 'waiting' && !j.extensionSeen && Date.now() - t0 > 20000 && !warned) {
@@ -104,6 +141,7 @@ for (;;) {
     const b64 = j.image.split(',')[1];
     fs.mkdirSync(path.dirname(path.resolve(out)), {recursive: true});
     fs.writeFileSync(out, Buffer.from(b64, 'base64'));
+    finished = true;
     log('image enregistrée :', out, j.chatUrl ? `(conversation ${j.chatUrl})` : '');
     break;
   }

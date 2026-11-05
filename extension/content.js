@@ -14,6 +14,9 @@ const SEL = {
   userTurn: '[data-message-author-role="user"]',
   generatedAlt: /generated image|image g[ée]n[ée]r[ée]e/i,
   attachmentAlt: /user attachment|pi[eè]ce jointe|attachment/i,
+  login: '[data-testid="login-button"], a[href*="/auth/login"], button[data-testid="welcome-login-button"]',
+  // ChatGPT says the quota is used up: the queue must stop (each new try would burn more)
+  quota: /(reached|hit) (your|the) .{0,30}limit|image generation limit|limit (for|on) (image|creating)|usage cap|limite (de|d.)[^.]{0,40}(atteinte|image)|atteint (la|votre) limite|plus d.images? (pour le moment|aujourd)|réessayez (plus tard|dans)|try again (later|in \d)|upgrade to (plus|pro)/i,
 };
 const JOB_KEY = 'aki-bridge-job';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -32,6 +35,29 @@ const send = (msg) =>
     }
   });
 let busy = false;
+/** Set when the bridge no longer wants the running job (cancelled, timed out): every wait stops at once. */
+let aborted = false;
+class Stop extends Error {
+  constructor(msg, pause) {
+    super(msg);
+    this.pause = pause;
+  }
+}
+/** Something that must stop the queue: logged out, or the quota message. */
+function blocker(answer = '') {
+  if (/^\/auth\b/.test(location.pathname) || (document.querySelector(SEL.login) && !document.querySelector(SEL.composer))) return new Stop('ChatGPT déconnecté : reconnecte-toi dans l’onglet, puis relance le pont (popup : Reprendre).', 'logged out');
+  // popups and banners on screen now, plus ChatGPT's answer to OUR message (never older messages of the chat)
+  const zones = [...document.querySelectorAll('[role="dialog"], [role="alert"]')];
+  const said = zones.map((z) => z.textContent || '').join(' ') + ' ' + answer;
+  if (SEL.quota.test(said)) return new Stop(`quota ChatGPT atteint : ${said.match(SEL.quota)[0]}`, 'quota');
+  return null;
+}
+/** Stop the answer ChatGPT is writing (used when the job is cancelled). */
+function stopChatGPT() {
+  const b = document.querySelector(SEL.stop);
+  if (b) b.click(), say('stop clicked');
+  return !!b;
+}
 
 /** What the page looks like when a step fails (to adapt the selectors). */
 function probe() {
@@ -43,10 +69,13 @@ function probe() {
 async function waitFor(fn, ms, what) {
   const end = Date.now() + ms;
   while (Date.now() < end) {
+    if (aborted) throw new Stop('cancelled by the bridge');
     const v = fn();
     if (v) return v;
     await sleep(500);
   }
+  const b = blocker();
+  if (b) throw b;
   throw new Error(`timeout: ${what} — ${probe()}`);
 }
 
@@ -185,6 +214,8 @@ async function run(job) {
     return {image: await blobToDataUrl(blob), chatUrl: location.href.split('?')[0]};
   }
   const box = await waitFor(() => document.querySelector(SEL.composer), 60000, 'composer');
+  const b0 = blocker();
+  if (b0) throw b0;
   const refNames = new Set((job.refs ?? []).map((r) => r.name));
   const refRatios = [];
   const refSizes = new Set();
@@ -218,7 +249,7 @@ async function run(job) {
   }
 
   // 3. type a message and send it (the send button appears with the text and stays disabled while uploading)
-  async function typeAndSend(text) {
+  async function typeAndSend(text, withRefs = true) {
     box.focus();
     if (box.tagName === 'TEXTAREA') {
       const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
@@ -234,14 +265,31 @@ async function run(job) {
       const b = document.querySelector(SEL.send);
       return b && !b.disabled && b.getAttribute('aria-disabled') !== 'true' && b;
     }, 180000, 'send button');
+    if (aborted) throw new Stop('cancelled by the bridge');
     before = new Set([...document.querySelectorAll(SEL.images)].map((i) => i.src));
+    const turns0 = document.querySelectorAll(SEL.userTurn).length;
     sendBtn.click();
     sentAt = Date.now();
     started = false;
-    await progress('generating');
+    sends++;
+    await send({type: 'progress', id: job.id, step: `generating (message ${sends})`, sent: true});
+    // the message really left with its references: our new turn shows them, else stop ChatGPT and fail
+    if (withRefs && job.refs?.length) {
+      const turn = await waitFor(() => {
+        const t = document.querySelectorAll(SEL.userTurn);
+        return t.length > turns0 && t[t.length - 1];
+      }, 30000, 'our message in the conversation').catch(() => null);
+      const n = turn ? turn.querySelectorAll('img').length : -1;
+      if (turn && n < job.refs.length) {
+        stopChatGPT();
+        throw new Error(`message sent with ${n}/${job.refs.length} references: ChatGPT stopped, job failed (nothing to retry by hand)`);
+      }
+      if (!turn) say('could not find our message to count its references');
+    }
   }
 
   let before = new Set();
+  let sends = 0;
   let sentAt = 0;
   let started = false;
   await attach();
@@ -253,13 +301,22 @@ async function run(job) {
   let stable = 0;
   let retries = 0;
   let quietSince = 0;
+  // ChatGPT's answer to OUR last message only (an older answer of the conversation must never be read as one)
   const lastAnswer = () => {
     const a = document.querySelectorAll('[data-message-author-role="assistant"]');
-    return (a[a.length - 1]?.textContent ?? '').trim();
+    const u = document.querySelectorAll(SEL.userTurn);
+    const ans = a[a.length - 1];
+    const mine = u[u.length - 1];
+    if (!ans || (mine && !(mine.compareDocumentPosition(ans) & Node.DOCUMENT_POSITION_FOLLOWING))) return '';
+    return (ans.textContent ?? '').trim();
   };
   const end = Date.now() + 10 * 60000;
   while (Date.now() < end) {
     await sleep(3000);
+    if (aborted) {
+      stopChatGPT();
+      throw new Stop('cancelled by the bridge');
+    }
     const busyGen = !!document.querySelector(SEL.stop);
     if (busyGen) started = true;
     if (!started && Date.now() - sentAt < 45000) continue;
@@ -290,27 +347,28 @@ async function run(job) {
     quietSince ||= Date.now();
     if (Date.now() - quietSince < 45000) continue;
     const said = lastAnswer();
-    const blocked = /\?|joindre|joins|attach|upload|référence|reference|fail|échou|error|erreur|try again|réessay|cannot|can.t|ne peux|impossible|policy|politique/i.test(said);
-    if (!blocked) {
-      quietSince = 0;
-      continue;
-    }
-    if (retries >= 2) throw new Error(`ChatGPT answered without an image: ${said.slice(0, 300)}`);
+    const bl = blocker(said);
+    if (bl) throw bl;
+    // Only ONE automatic retry, and only when ChatGPT clearly did not make an image: it asks for the references, or
+    // it reports a failure with a retry button. A question or anything else fails the job: a blind re-send can make a
+    // second image (and burn quota) when the first one is only slow to show.
+    const askRefs = /joindre|joins|attach|upload|images? (de )?r[ée]f[ée]rence|reference images?/i.test(said);
+    const retry = [...document.querySelectorAll('button')].find((b) => /^(try again|réessayer|regenerate|régénérer)$/i.test(b.textContent.trim()));
+    const failed = retry && /fail|échou|error|erreur|went wrong|problème/i.test(said);
+    if (retries >= 1 || !(askRefs || failed)) throw new Error(`ChatGPT answered without an image: ${said.slice(0, 300)}`);
     retries++;
     say('no image, answer was:', said.slice(0, 200));
-    const retry = [...document.querySelectorAll('button')].find((b) => /^(try again|réessayer|regenerate|régénérer)$/i.test(b.textContent.trim()));
-    if (/joindre|joins|attach|upload|référence|reference|images? (de )?r/i.test(said)) {
-      await progress(`retry ${retries}: references again`);
+    if (askRefs) {
+      await progress('retry: references again');
       await attach();
       await typeAndSend('Voici les images de référence en pièces jointes. Génère l’image maintenant, avec les consignes précédentes, sans poser de question.');
-    } else if (retry && /fail|échou|error|erreur|try again|réessay/i.test(said)) {
-      await progress(`retry ${retries}: try again`);
+    } else {
+      await progress('retry: try again');
       retry.click();
+      sends++;
+      await send({type: 'progress', id: job.id, step: 'generating (retry)', sent: true});
       sentAt = Date.now();
       started = false;
-    } else {
-      await progress(`retry ${retries}: go on`);
-      await typeAndSend('Oui, vas-y : génère l’image maintenant avec ces consignes, sans poser de question.');
     }
     quietSince = 0;
   }
@@ -340,12 +398,24 @@ async function tick() {
       if (job) say('job', job.id);
     }
     if (!job) return;
+    aborted = false;
+    // every 5 s: is the job still wanted? (cancelled or timed out on the bridge = stop at once, no new message)
+    const watch = setInterval(async () => {
+      const r = await send({type: 'alive', id: job.id});
+      if (r.ok && r.alive === false && !aborted) {
+        aborted = true;
+        say('job no longer wanted by the bridge: stopping');
+        stopChatGPT();
+      }
+    }, 5000);
     try {
       const out = await run(job);
       if (out === 'navigating') return;
       await send({type: 'result', id: job.id, ...out});
     } catch (e) {
-      await send({type: 'result', id: job.id, error: String(e.message || e)});
+      await send({type: 'result', id: job.id, error: String(e.message || e), pause: e.pause});
+    } finally {
+      clearInterval(watch);
     }
   } finally {
     busy = false;
@@ -353,11 +423,19 @@ async function tick() {
 }
 
 say('content script ready on', location.pathname);
+// the background wakes the working tab (a hidden tab's own timers are slowed down by the browser)
+const onWake = (m) => m?.type === 'wake' && tick();
+chrome.runtime.onMessage.addListener(onWake);
 const timer = setInterval(() => {
   // the extension was reloaded: this copy is dead, stop quietly (the new copy takes over)
   if (!chrome.runtime?.id) return window.__akiBridgeStop?.();
   tick();
 }, 3000);
-window.__akiBridgeStop = () => clearInterval(timer);
+window.__akiBridgeStop = () => {
+  clearInterval(timer);
+  try {
+    chrome.runtime.onMessage.removeListener(onWake);
+  } catch {}
+};
 tick();
 })();
