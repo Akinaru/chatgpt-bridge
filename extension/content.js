@@ -314,6 +314,7 @@ async function run(job) {
       if (at < 0) return {txt: '', how: 'none'};
       let rest = all.slice(at + tail.length);
       rest = rest.replace(/ChatGPT (peut|can) (faire|make)[\s\S]*$/i, '').trim();
+      rest = rest.replace(/^ChatGPT (a dit|said)\s*:\s*/i, '');
       return {txt: rest, how: 'page'};
     };
     // status lines ChatGPT shows while it works (thinking, analysing the image...): never an answer
