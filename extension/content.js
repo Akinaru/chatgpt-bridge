@@ -295,6 +295,40 @@ async function run(job) {
   await attach();
   await typeAndSend(job.prompt);
 
+  // ask mode: a text question about the attached images (a review). Wait for the written answer to finish, return it.
+  if (job.ask) {
+    await progress('waiting for the answer');
+    const answer = () => {
+      const a = document.querySelectorAll('[data-message-author-role="assistant"]');
+      const u = document.querySelectorAll(SEL.userTurn);
+      const ans = a[a.length - 1];
+      const mine = u[u.length - 1];
+      if (!ans || (mine && !(mine.compareDocumentPosition(ans) & Node.DOCUMENT_POSITION_FOLLOWING))) return '';
+      return (ans.innerText ?? ans.textContent ?? '').trim();
+    };
+    let prev = '';
+    let same = 0;
+    const until = Date.now() + 6 * 60000;
+    while (Date.now() < until) {
+      await sleep(2000);
+      if (aborted) {
+        stopChatGPT();
+        throw new Stop('cancelled by the bridge');
+      }
+      const txt = answer();
+      const busyAns = !!document.querySelector(SEL.stop);
+      if (txt && txt === prev && !busyAns) {
+        if (++same >= 3) {
+          const bl = blocker(txt);
+          if (bl) throw bl;
+          return {image: 'data:text/plain;base64,' + btoa(unescape(encodeURIComponent(txt))), chatUrl: location.href.split('?')[0]};
+        }
+      } else same = 0;
+      prev = txt;
+    }
+    throw new Error('timeout: no written answer');
+  }
+
   // 4. wait for the image; if ChatGPT answers with text instead (asks for the references, a question, a failure),
   // answer it and try again (2 times at most), so a job never stays blocked
   let src = null;

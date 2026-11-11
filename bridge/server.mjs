@@ -48,7 +48,7 @@ const history = fs.existsSync(HISTORY) ? JSON.parse(fs.readFileSync(HISTORY, 'ut
 const SETTINGS = path.join(DIR, 'settings.json');
 const settings = {effort: 'high', autoOpenTab: true, newChat: false, ...(fs.existsSync(SETTINGS) ? JSON.parse(fs.readFileSync(SETTINGS, 'utf8')) : {})};
 function remember(j) {
-  const h = {id: j.id, sends: j.sends || 0, topic: j.topic, kind: j.grab ? 'grab' : j.capture ? 'capture' : 'image', status: j.status, error: j.error, chatUrl: j.chatUrl, prompt: (j.prompt || '').slice(0, 140), refs: (j.refs || []).length, created: j.created, ended: Date.now(), image: j.file ? path.basename(j.file) : null};
+  const h = {id: j.id, sends: j.sends || 0, topic: j.topic, kind: j.ask ? 'ask' : j.grab ? 'grab' : j.capture ? 'capture' : 'image', status: j.status, error: j.error, chatUrl: j.chatUrl, prompt: (j.prompt || '').slice(0, 140), refs: (j.refs || []).length, created: j.created, ended: Date.now(), image: j.file ? path.basename(j.file) : null};
   history.unshift(h);
   history.splice(50);
   fs.writeFileSync(HISTORY, JSON.stringify(history, null, 1));
@@ -96,14 +96,14 @@ createServer(async (req, res) => {
       if (!b.prompt && !b.grab && !b.capture) return send(res, 400, {error: 'prompt required'});
       if (paused) return send(res, 409, {error: `bridge paused: ${paused.reason}`, paused});
       // the same request already queued or running (a retried script): reuse it, never generate twice
-      const sig = JSON.stringify([b.prompt ?? '', b.topic ?? null, b.chat ?? null, (b.refs ?? []).map((r) => (r.data ?? '').length), !!b.grab, Number(b.back) || 1]);
+      const sig = JSON.stringify([b.prompt ?? '', b.topic ?? null, b.chat ?? null, (b.refs ?? []).map((r) => (r.data ?? '').length), !!b.grab, Number(b.back) || 1, !!b.ask]);
       const same = [...jobs.values()].find((j) => j.sig === sig && ['waiting', 'running'].includes(j.status));
       if (same) {
         log('duplicate request, reusing', same.id);
         return send(res, 200, {id: same.id, duplicate: true});
       }
       const id = `j${Date.now().toString(36)}${(++seq).toString(36)}`;
-      jobs.set(id, {id, prompt: b.prompt, refs: b.refs ?? [], topic: b.topic ?? null, chat: b.chat ?? null, mode: b.mode ?? 'here', grab: !!b.grab, back: Number(b.back) || 1, capture: !!b.capture, sig, sends: 0, status: 'waiting', step: '', at: Date.now(), created: Date.now()});
+      jobs.set(id, {id, prompt: b.prompt, refs: b.refs ?? [], topic: b.topic ?? null, chat: b.chat ?? null, mode: b.mode ?? 'here', grab: !!b.grab, back: Number(b.back) || 1, capture: !!b.capture, ask: !!b.ask, sig, sends: 0, status: 'waiting', step: '', at: Date.now(), created: Date.now()});
       log('job', id, b.topic ? `topic=${b.topic}` : '(new chat)', `${(b.refs ?? []).length} refs`);
       return send(res, 200, {id});
     }
@@ -209,7 +209,7 @@ createServer(async (req, res) => {
       log('start', j.id);
       // where: an explicit conversation, the topic's conversation, a new one, or the tab's current one (default)
       const chatUrl = j.chat || (j.topic && chats[j.topic]) || null;
-      j.payload = {id: j.id, prompt: j.prompt, refs: j.refs, grab: j.grab, back: j.back, capture: j.capture, effort: settings.effort, chatUrl, mode: chatUrl ? 'chat' : j.topic || settings.newChat ? 'new' : j.mode};
+      j.payload = {id: j.id, prompt: j.prompt, refs: j.refs, grab: j.grab, back: j.back, capture: j.capture, ask: j.ask, effort: settings.effort, chatUrl, mode: chatUrl ? 'chat' : j.topic || settings.newChat ? 'new' : j.mode};
       return send(res, 200, {job: j.payload});
     }
     // the tab reloads while opening a conversation: it asks again for its running job (too big for sessionStorage)
@@ -243,7 +243,7 @@ createServer(async (req, res) => {
       else {
         Object.assign(j, {status: 'done', image: b.image, chatUrl: b.chatUrl, at: Date.now()});
         const [head, b64] = String(b.image).split(',');
-        const ext = /image\/(png|jpeg|webp)/.exec(head)?.[1]?.replace('jpeg', 'jpg') ?? (head.includes('html') ? 'html' : 'bin');
+        const ext = /image\/(png|jpeg|webp)/.exec(head)?.[1]?.replace('jpeg', 'jpg') ?? (head.includes('html') ? 'html' : head.includes('text/plain') ? 'txt' : 'bin');
         j.file = path.join(IMAGES, `${j.id}.${ext}`);
         fs.writeFileSync(j.file, Buffer.from(b64 ?? '', 'base64'));
         if (j.topic && b.chatUrl && /\/c\//.test(b.chatUrl)) (chats[j.topic] = b.chatUrl), saveChats();

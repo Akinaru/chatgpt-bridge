@@ -2,6 +2,7 @@
 /**
  * Sends one image job to the bridge and waits for the result.
  *   node bridge/submit.mjs <jobDir> <out.png> [--topic <name>]
+ *   node bridge/submit.mjs <jobDir> <answer.txt> --ask [--topic <name>]   text question about refs/ (image review)
  * <jobDir> holds prompt.txt and refs/ (attached in name order). Starts the bridge if it is not running.
  * Guard: if no ChatGPT tab answers, it says so (open Dia / Chrome with a chatgpt.com tab and the extension).
  */
@@ -30,6 +31,7 @@ const mode = flag('--new') ? 'new' : 'here';
 const back = Number(opt('--back')) || 1;
 const grab = flag('--grab');
 const capture = flag('--capture');
+const ask = flag('--ask');
 const [jobDir, out] = argv;
 if (!jobDir || !out) {
   console.log('usage: node bridge/submit.mjs <jobDir> <out.png> [--new | --chat <url> | --topic <name>] [--grab]');
@@ -72,7 +74,7 @@ if (st.paused) {
   console.error('Rien n’est envoyé. Quand c’est réglé : bouton « Reprendre » dans la popup, ou curl -X POST http://127.0.0.1:3777/resume');
   process.exit(4);
 }
-const created = await (await fetch(`${BRIDGE}/jobs`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({prompt, refs, topic, chat, mode, grab, back, capture})})).json();
+const created = await (await fetch(`${BRIDGE}/jobs`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({prompt, refs, topic, chat, mode, grab, back, capture, ask})})).json();
 if (created.error) {
   console.error('ERREUR :', created.error);
   process.exit(4);
@@ -143,7 +145,7 @@ for (;;) {
     fs.mkdirSync(path.dirname(path.resolve(out)), {recursive: true});
     fs.writeFileSync(out, Buffer.from(b64, 'base64'));
     finished = true;
-    log('image enregistrée :', out, j.chatUrl ? `(conversation ${j.chatUrl})` : '');
+    log(ask ? 'réponse enregistrée :' : 'image enregistrée :', out, j.chatUrl ? `(conversation ${j.chatUrl})` : '');
     break;
   }
 }

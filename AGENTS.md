@@ -28,6 +28,15 @@ You can generate images through the user's ChatGPT tab. Follow this exactly.
 3. Several images: run the jobs **one after the other**. A loop in a shell script is fine. Never in parallel.
 4. To fetch an image already in a conversation without generating: `node bridge/submit.mjs any-folder out.png --chat <url> --grab [--back N]`.
 
+## Ask for a review (text answer)
+ChatGPT is also a good image critic. Before showing a picture to the user, ask it:
+```bash
+node bridge/submit.mjs job answer.txt --ask --topic <style>-review
+```
+Same job folder (`prompt.txt` = the question, `refs/` = the images to judge). The written answer is saved in
+`answer.txt`. Use a separate review topic so the critique does not pollute the generation conversation. Ask precise
+questions (what is wrong, where, how bad) and act on the answer before the user sees anything.
+
 ## Prompt tips that work
 - Ask for a **plain flat light grey `#c8c8c8` background** when you need to cut the image out. Never ask for "transparent": you get a fake checkerboard.
 - Give the exact format (e.g. "square 1:1", "portrait 2:3") and say what must not appear (text, watermark…).
