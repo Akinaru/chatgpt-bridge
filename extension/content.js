@@ -219,13 +219,22 @@ async function run(job) {
   const refNames = new Set((job.refs ?? []).map((r) => r.name));
   const refRatios = [];
   const refSizes = new Set();
-  const composerImgs = () => (box.closest('form') ?? document).querySelectorAll('img').length;
+  // attachments in the composer: thumbnails (img, or blob / background-image previews in newer layouts) or file chips
+  // with a remove button; counted in the composer area (form, or the box's nearest big container)
+  const composerArea = () => box.closest('form') ?? box.closest('[class*="composer"]') ?? box.parentElement?.parentElement?.parentElement?.parentElement ?? document;
+  const composerImgs = () => {
+    const a = composerArea();
+    const imgs = a.querySelectorAll('img').length;
+    const blobs = [...a.querySelectorAll('[style*="blob:"], [style*="background-image"]')].length;
+    const chips = [...a.querySelectorAll('button')].filter((b) => /supprimer|remove|retirer/i.test(b.getAttribute('aria-label') || '')).length;
+    return Math.max(imgs, blobs, chips);
+  };
 
   // 2. references: shrunk to 1600 px max (big files fail to upload), attached, then we wait until they show
   async function attach() {
     if (!job.refs?.length) return;
     await progress('upload');
-    const input = await waitFor(() => document.querySelector(SEL.fileInput), 20000, 'file input');
+    const input = await waitFor(() => (() => { const all = [...document.querySelectorAll(SEL.fileInput)].filter((i) => !i.hasAttribute('capture')); return all.find((i) => i.multiple && /image/.test(i.accept || '') && !i.disabled) || all.find((i) => i.multiple && !i.disabled) || all.find((i) => !i.disabled) || null; })(), 20000, 'file input');
     const n0 = composerImgs();
     const dt = new DataTransfer();
     for (const [i, r] of job.refs.entries()) {
@@ -243,7 +252,11 @@ async function run(job) {
       input.files = dt.files;
       input.dispatchEvent(new Event('change', {bubbles: true}));
       ok = await waitFor(() => composerImgs() - n0 >= job.refs.length, 60000, 'reference thumbnails').catch(() => false);
-      if (!ok) throw new Error(`references not attached (${composerImgs() - n0}/${job.refs.length} visible): prompt NOT sent`);
+      if (!ok) {
+        const inputs = [...document.querySelectorAll('input[type="file"]')].map((i) => `${i.accept || '*'}${i.multiple ? '+m' : ''}`).join(' | ');
+        await progress(`DEBUG upload failed: inputs=[${inputs}] area=${composerArea().tagName}.${(composerArea().className || '').toString().slice(0, 60)} html=${(composerArea().outerHTML || '').replace(/\s+/g, ' ').slice(0, 1500)}`);
+        throw new Error(`references not attached (${composerImgs() - n0}/${job.refs.length} visible): prompt NOT sent`);
+      }
     }
     // a thumbnail can show while its upload failed ("échec du chargement"): wait for the uploads to settle, then check;
     // on a failure remove the attachments and attach once more, then give up (the agent retries the job)
