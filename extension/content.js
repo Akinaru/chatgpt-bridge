@@ -295,50 +295,58 @@ async function run(job) {
   await attach();
   await typeAndSend(job.prompt);
 
-  // ask mode: a text question about the attached images (a review). Wait for the written answer to finish, return it.
+  // ask mode: a text question about the attached images (a review). A thinking model can reason for many minutes
+  // before writing: wait up to 25 min, report a detailed heartbeat every 20 s, return the written answer.
   if (job.ask) {
     await progress('waiting for the answer');
-    // the last conversation turn, if it is not ours (ChatGPT renames its attributes often: try several markers)
+    const tail = (job.prompt || '').trim().split('\n').filter(Boolean).pop().slice(-60);
+    // 1) the last assistant message after our message; 2) fallback: the page text after the end of our prompt
     const answer = () => {
-      const turns = [...document.querySelectorAll('article, [data-testid^="conversation-turn"], [data-message-author-role]')];
       const u = [...document.querySelectorAll(SEL.userTurn)];
       const mine = u[u.length - 1];
-      for (let i = turns.length - 1; i >= 0; i--) {
-        const el = turns[i];
-        if (mine && (el === mine || el.contains(mine) || mine.contains(el))) return '';
-        if (mine && !(mine.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING)) return '';
-        const txt = (el.innerText ?? el.textContent ?? '').trim();
-        if (txt) return txt;
-      }
-      return '';
+      const as = [...document.querySelectorAll('[data-message-author-role="assistant"]')]
+        .filter((a) => !mine || mine.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING);
+      const viaRole = as.map((a) => (a.innerText || '').trim()).filter(Boolean).join('\n\n');
+      if (viaRole) return {txt: viaRole, how: 'role'};
+      const main = document.querySelector('main') || document.body;
+      const all = main.innerText || '';
+      const at = tail ? all.lastIndexOf(tail) : -1;
+      if (at < 0) return {txt: '', how: 'none'};
+      let rest = all.slice(at + tail.length);
+      rest = rest.replace(/ChatGPT (peut|can) (faire|make)[\s\S]*$/i, '').trim();
+      return {txt: rest, how: 'page'};
     };
-    let lastBeat = 0;
     let prev = '';
     let same = 0;
-    const until = Date.now() + 15 * 60000; // thinking models can reason for many minutes before writing
+    let lastBeat = 0;
+    const t0 = Date.now();
+    const until = t0 + 25 * 60000;
     while (Date.now() < until) {
       await sleep(2000);
       if (aborted) {
         stopChatGPT();
         throw new Stop('cancelled by the bridge');
       }
-      const txt = answer();
+      const {txt, how} = answer();
       const busyAns = !!document.querySelector(SEL.stop);
-      if (txt.length !== prev.length || Date.now() - lastBeat > 30000) {
+      if (Date.now() - lastBeat > 20000) {
         lastBeat = Date.now();
-        const nA = document.querySelectorAll('[data-message-author-role="assistant"]').length, nT = document.querySelectorAll('article, [data-testid^="conversation-turn"]').length;
-        await progress(`answer ${txt.length} chars${busyAns ? ' (writing)' : ''} [assistant=${nA} turns=${nT}]`);
+        const nU = document.querySelectorAll(SEL.userTurn).length, nA = document.querySelectorAll('[data-message-author-role="assistant"]').length;
+        const peek = txt.replace(/\s+/g, ' ').slice(0, 50);
+        await progress(`answer ${txt.length} chars via ${how}${busyAns ? ', ChatGPT busy' : ''} · ${Math.round((Date.now() - t0) / 1000)} s · url=${location.pathname} hidden=${document.hidden} user=${nU} assistant=${nA} · « ${peek} »`);
       }
+      // done: text present, ChatGPT no longer writing, unchanged for 3 polls (6 s)
       if (txt && txt === prev && !busyAns) {
         if (++same >= 3) {
           const bl = blocker(txt);
           if (bl) throw bl;
+          await progress(`answer received (${txt.length} chars via ${how})`);
           return {image: 'data:text/plain;base64,' + btoa(unescape(encodeURIComponent(txt))), chatUrl: location.href.split('?')[0]};
         }
       } else same = 0;
       prev = txt;
     }
-    throw new Error('timeout: no written answer');
+    throw new Error('timeout: no written answer after 25 min');
   }
 
   // 4. wait for the image; if ChatGPT answers with text instead (asks for the references, a question, a failure),

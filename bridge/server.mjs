@@ -82,7 +82,7 @@ const waiting = () => [...jobs.values()].filter((j) => j.status === 'waiting');
 
 setInterval(() => {
   const r = running();
-  if (r && Date.now() - r.at > RUN_TIMEOUT) Object.assign(r, {status: 'error', error: 'timeout: no answer from the ChatGPT tab in 10 min'}), remember(r);
+  if (r && Date.now() - r.at > RUN_TIMEOUT) Object.assign(r, {status: 'error', error: 'timeout: no news from the ChatGPT tab for 10 min'}), remember(r);
   // drop finished jobs after an hour
   for (const j of jobs.values()) if (['done', 'error'].includes(j.status) && Date.now() - j.at > 3600000) jobs.delete(j.id);
 }, 5000);
@@ -222,7 +222,7 @@ createServer(async (req, res) => {
     if (req.method === 'POST' && pr) {
       const b = await body(req);
       const j = jobs.get(pr[1]);
-      if (j) (j.step = b.step), log(j.id, b.step);
+      if (j) (j.step = b.step), (j.at = Date.now()), log(j.id, b.step); // any news from the tab keeps the job alive
       if (j && b.sent) j.sends = (j.sends || 0) + 1; // one more message sent to ChatGPT (each one can make an image)
       return send(res, 200, {ok: true});
     }

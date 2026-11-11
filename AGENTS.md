@@ -34,7 +34,9 @@ ChatGPT is also a good image critic. Before showing a picture to the user, ask i
 node bridge/submit.mjs job answer.txt --ask --topic <style>-review
 ```
 Same job folder (`prompt.txt` = the question, `refs/` = the images to judge). The written answer is saved in
-`answer.txt`. Use a separate review topic so the critique does not pollute the generation conversation. Ask precise
+`answer.txt`. A thinking model can reason for several minutes before writing: the job waits up to 25 min and the tab reports a
+heartbeat every 20 s (`answer N chars via role|page · elapsed · url · hidden · user/assistant counts · « first words »`).
+Use a separate review topic so the critique does not pollute the generation conversation. Ask precise
 questions (what is wrong, where, how bad) and act on the answer before the user sees anything.
 
 ## Prompt tips that work
