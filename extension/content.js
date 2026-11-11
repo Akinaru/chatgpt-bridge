@@ -245,6 +245,23 @@ async function run(job) {
       ok = await waitFor(() => composerImgs() - n0 >= job.refs.length, 60000, 'reference thumbnails').catch(() => false);
       if (!ok) throw new Error(`references not attached (${composerImgs() - n0}/${job.refs.length} visible): prompt NOT sent`);
     }
+    // a thumbnail can show while its upload failed ("échec du chargement"): wait for the uploads to settle, then check;
+    // on a failure remove the attachments and attach once more, then give up (the agent retries the job)
+    const form = box.closest('form') ?? document;
+    const failed = () => /échec|a échoué|failed|impossible de (charger|télécharger|importer)|erreur de chargement|upload error|réessayer|retry/i.test(form.innerText || '');
+    const clearRefs = () => [...form.querySelectorAll('button')].filter((b) => /remove|supprimer|retirer|delete/i.test(b.getAttribute('aria-label') || '')).forEach((b) => b.click());
+    for (let tries = 0; ; tries++) {
+      await sleep(4000);
+      if (!failed()) break;
+      say('reference upload failed in ChatGPT, attaching again');
+      clearRefs();
+      await sleep(1500);
+      if (tries >= 1) throw new Error('reference upload failed in ChatGPT (échec du chargement): prompt NOT sent');
+      const n1 = composerImgs();
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change', {bubbles: true}));
+      await waitFor(() => composerImgs() - n1 >= job.refs.length, 90000, 'reference thumbnails').catch(() => false);
+    }
     await sleep(1500);
   }
 
@@ -318,7 +335,7 @@ async function run(job) {
       return {txt: rest, how: 'page'};
     };
     // status lines ChatGPT shows while it works (thinking, analysing the image...): never an answer
-    const STATUS = /^(analyse de l.image en cours|analyzing (the )?image|réflexion( en cours)?|thinking|reasoning|raisonnement|recherche( en cours)?|searching|réfléchi(t)? pendant .*|thought for .*|en train de .*|working|chargement.*|loading.*)\.*$/i;
+    const STATUS = /^(effort de réflexion|reasoning effort|élevé|moyen|faible|étendu|high|medium|low|extended|analyse de l.image en cours|analyzing (the )?image|réflexion( en cours)?|thinking|reasoning|raisonnement|recherche( en cours)?|searching|réfléchi(t)? pendant .*|thought for .*|en train de .*|working|chargement.*|loading.*)\.*$/i;
     const clean = (s) => s.split('\n').map((l) => l.trim()).filter((l) => l && !STATUS.test(l)).join('\n').trim();
     // ChatGPT is still working: stop button (several markups), or a status line is the last thing on the page
     const working = (raw) => {
