@@ -316,6 +316,16 @@ async function run(job) {
       rest = rest.replace(/ChatGPT (peut|can) (faire|make)[\s\S]*$/i, '').trim();
       return {txt: rest, how: 'page'};
     };
+    // status lines ChatGPT shows while it works (thinking, analysing the image...): never an answer
+    const STATUS = /^(analyse de l.image en cours|analyzing (the )?image|réflexion( en cours)?|thinking|reasoning|raisonnement|recherche( en cours)?|searching|réfléchi(t)? pendant .*|thought for .*|en train de .*|working|chargement.*|loading.*)\.*$/i;
+    const clean = (s) => s.split('\n').map((l) => l.trim()).filter((l) => l && !STATUS.test(l)).join('\n').trim();
+    // ChatGPT is still working: stop button (several markups), or a status line is the last thing on the page
+    const working = (raw) => {
+      if (document.querySelector(SEL.stop)) return true;
+      if ([...document.querySelectorAll('button')].some((b) => /^(stop|arrêter|stop generating|arrêter la génération|stop streaming)/i.test((b.getAttribute('aria-label') || b.textContent || '').trim()))) return true;
+      const lines = raw.split('\n').map((l) => l.trim()).filter(Boolean);
+      return lines.length > 0 && STATUS.test(lines[lines.length - 1]);
+    };
     let prev = '';
     let same = 0;
     let lastBeat = 0;
@@ -327,17 +337,18 @@ async function run(job) {
         stopChatGPT();
         throw new Stop('cancelled by the bridge');
       }
-      const {txt, how} = answer();
-      const busyAns = !!document.querySelector(SEL.stop);
+      const {txt: raw, how} = answer();
+      const busyAns = working(raw);
+      const txt = clean(raw);
       if (Date.now() - lastBeat > 20000) {
         lastBeat = Date.now();
         const nU = document.querySelectorAll(SEL.userTurn).length, nA = document.querySelectorAll('[data-message-author-role="assistant"]').length;
         const peek = txt.replace(/\s+/g, ' ').slice(0, 50);
         await progress(`answer ${txt.length} chars via ${how}${busyAns ? ', ChatGPT busy' : ''} · ${Math.round((Date.now() - t0) / 1000)} s · url=${location.pathname} hidden=${document.hidden} user=${nU} assistant=${nA} · « ${peek} »`);
       }
-      // done: text present, ChatGPT no longer writing, unchanged for 3 polls (6 s)
+      // done: real text (status lines removed), ChatGPT not working, unchanged for 10 s (30 s if it is short)
       if (txt && txt === prev && !busyAns) {
-        if (++same >= 3) {
+        if (++same >= (txt.length < 300 ? 15 : 5)) {
           const bl = blocker(txt);
           if (bl) throw bl;
           await progress(`answer received (${txt.length} chars via ${how})`);
