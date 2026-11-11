@@ -142,6 +142,12 @@ for (;;) {
   }
   if (j.status === 'done') {
     const b64 = j.image.split(',')[1];
+    // guard (2026-11-11): the tab once returned our own reference image as the result
+    const refHit = refs.find((r) => r.data.split(',')[1] === b64);
+    if (refHit && !grab) {
+      console.error(`ERREUR : le résultat est la référence ${refHit.name} elle-même (pas une image générée). Récupère la vraie image avec --grab si elle est dans la conversation.`);
+      process.exit(1);
+    }
     fs.mkdirSync(path.dirname(path.resolve(out)), {recursive: true});
     fs.writeFileSync(out, Buffer.from(b64, 'base64'));
     finished = true;
