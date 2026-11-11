@@ -131,7 +131,7 @@ for (;;) {
   // is stuck, give up instead of waiting forever
   if (j.status === 'waiting') tRun = 0; // requeued by the bridge (tab reloaded before sending): the clock restarts
   else if (!tRun) tRun = Date.now();
-  if (tRun && j.status !== 'done' && Date.now() - tRun > 6 * 60000) {
+  if (tRun && j.status !== 'done' && Date.now() - tRun > (ask ? 16 : 6) * 60000) {
     await fetch(`${BRIDGE}/jobs/${id}`, {method: 'DELETE'}).catch(() => {});
     console.error('ERREUR : génération bloquée (plus de 6 min), job annulé.');
     process.exit(1);

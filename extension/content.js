@@ -308,7 +308,7 @@ async function run(job) {
     };
     let prev = '';
     let same = 0;
-    const until = Date.now() + 6 * 60000;
+    const until = Date.now() + 15 * 60000; // thinking models can reason for many minutes before writing
     while (Date.now() < until) {
       await sleep(2000);
       if (aborted) {
@@ -317,6 +317,7 @@ async function run(job) {
       }
       const txt = answer();
       const busyAns = !!document.querySelector(SEL.stop);
+      if (txt.length !== prev.length) await progress(`answer ${txt.length} chars${busyAns ? ' (writing)' : ''}`);
       if (txt && txt === prev && !busyAns) {
         if (++same >= 3) {
           const bl = blocker(txt);
