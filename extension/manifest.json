@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Aki Labs · ChatGPT bridge",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Generates images in an open ChatGPT tab for jobs queued by the local Aki Labs bridge (127.0.0.1 only).",
   "permissions": [
     "tabs",

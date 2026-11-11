@@ -298,14 +298,21 @@ async function run(job) {
   // ask mode: a text question about the attached images (a review). Wait for the written answer to finish, return it.
   if (job.ask) {
     await progress('waiting for the answer');
+    // the last conversation turn, if it is not ours (ChatGPT renames its attributes often: try several markers)
     const answer = () => {
-      const a = document.querySelectorAll('[data-message-author-role="assistant"]');
-      const u = document.querySelectorAll(SEL.userTurn);
-      const ans = a[a.length - 1];
+      const turns = [...document.querySelectorAll('article, [data-testid^="conversation-turn"], [data-message-author-role]')];
+      const u = [...document.querySelectorAll(SEL.userTurn)];
       const mine = u[u.length - 1];
-      if (!ans || (mine && !(mine.compareDocumentPosition(ans) & Node.DOCUMENT_POSITION_FOLLOWING))) return '';
-      return (ans.innerText ?? ans.textContent ?? '').trim();
+      for (let i = turns.length - 1; i >= 0; i--) {
+        const el = turns[i];
+        if (mine && (el === mine || el.contains(mine) || mine.contains(el))) return '';
+        if (mine && !(mine.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING)) return '';
+        const txt = (el.innerText ?? el.textContent ?? '').trim();
+        if (txt) return txt;
+      }
+      return '';
     };
+    let lastBeat = 0;
     let prev = '';
     let same = 0;
     const until = Date.now() + 15 * 60000; // thinking models can reason for many minutes before writing
@@ -317,7 +324,11 @@ async function run(job) {
       }
       const txt = answer();
       const busyAns = !!document.querySelector(SEL.stop);
-      if (txt.length !== prev.length) await progress(`answer ${txt.length} chars${busyAns ? ' (writing)' : ''}`);
+      if (txt.length !== prev.length || Date.now() - lastBeat > 30000) {
+        lastBeat = Date.now();
+        const nA = document.querySelectorAll('[data-message-author-role="assistant"]').length, nT = document.querySelectorAll('article, [data-testid^="conversation-turn"]').length;
+        await progress(`answer ${txt.length} chars${busyAns ? ' (writing)' : ''} [assistant=${nA} turns=${nT}]`);
+      }
       if (txt && txt === prev && !busyAns) {
         if (++same >= 3) {
           const bl = blocker(txt);
