@@ -341,8 +341,17 @@ async function run(job) {
       const main = document.querySelector('main') || document.body;
       const all = main.innerText || '';
       const at = tail ? all.lastIndexOf(tail) : -1;
-      if (at < 0) return {txt: '', how: 'none'};
-      let rest = all.slice(at + tail.length);
+      let rest;
+      if (at >= 0) rest = all.slice(at + tail.length);
+      else {
+        // a long prompt is folded by ChatGPT ("Afficher plus"): its end is not in the page text. The answer still
+        // follows the label ChatGPT puts before every reply: take the text after the last one.
+        const m = [...all.matchAll(/ChatGPT (a dit|said)\s*:\s*/gi)].pop();
+        if (!m) return {txt: '', how: 'none'};
+        rest = all.slice(m.index + m[0].length);
+        rest = rest.replace(/ChatGPT (peut|can) (faire|make)[\s\S]*$/i, '').trim();
+        return {txt: rest, how: 'label'};
+      }
       rest = rest.replace(/ChatGPT (peut|can) (faire|make)[\s\S]*$/i, '').trim();
       rest = rest.replace(/^ChatGPT (a dit|said)\s*:\s*/i, '');
       return {txt: rest, how: 'page'};
