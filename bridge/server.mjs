@@ -123,7 +123,7 @@ createServer(async (req, res) => {
       return send(res, 200, {
         waiting: waiting().length,
         queue: waiting().map((j) => ({id: j.id, topic: j.topic, prompt: (j.prompt || '').slice(0, 80)})),
-        running: r ? {id: r.id, step: r.step, topic: r.topic, since: r.at, prompt: (r.prompt || '').slice(0, 80)} : null,
+        running: r ? {id: r.id, step: r.step, topic: r.topic, ask: !!r.ask, since: r.started ?? r.at, prompt: (r.prompt || '').slice(0, 80)} : null,
         extensionSeen: Date.now() - lastPoll < 20000,
         paused,
         worker,
@@ -206,7 +206,7 @@ createServer(async (req, res) => {
       if (running()) return send(res, 200, {job: null});
       const j = waiting()[0];
       if (!j) return send(res, 200, {job: null});
-      Object.assign(j, {status: 'running', at: Date.now(), step: 'start'});
+      Object.assign(j, {status: 'running', at: Date.now(), started: Date.now(), step: 'start'});
       log('start', j.id);
       // where: an explicit conversation, the topic's conversation, a new one, or the tab's current one (default)
       const chatUrl = j.chat || (j.topic && chats[j.topic]) || null;
@@ -223,6 +223,7 @@ createServer(async (req, res) => {
     if (req.method === 'POST' && pr) {
       const b = await body(req);
       const j = jobs.get(pr[1]);
+      lastPoll = Date.now(); // news from the working tab: it is alive
       if (j) (j.step = b.step), (j.at = Date.now()), log(j.id, b.step); // any news from the tab keeps the job alive
       if (j && b.sent) j.sends = (j.sends || 0) + 1; // one more message sent to ChatGPT (each one can make an image)
       return send(res, 200, {ok: true});

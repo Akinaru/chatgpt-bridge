@@ -4,49 +4,44 @@
 <link rel="stylesheet" href="popup.css" />
 <body>
   <header>
-    <div class="brand"><span class="logo">⛏</span><div><b>ChatGPT bridge</b><small>Aki Labs</small></div></div>
+    <b>ChatGPT bridge</b>
     <span id="pill" class="pill">…</span>
   </header>
 
   <div id="pause"></div>
-  <section>
-    <h2>Onglet de travail</h2>
+
+  <!-- the one thing to read: what the bridge is doing now, step by step, and what the extension reads in the tab -->
+  <section id="now" class="now"></section>
+  <div id="queue" class="queue"></div>
+
+  <details>
+    <summary>Onglet de travail</summary>
     <div id="tabs" class="list"></div>
     <div class="row">
-      <button id="newtab" class="ghost">+ Nouvel onglet ChatGPT</button>
-      <button id="untarget" class="ghost">Aucun</button>
+      <button id="newtab">Nouvel onglet ChatGPT</button>
+      <button id="untarget">Aucun</button>
     </div>
-  </section>
+  </details>
 
-  <section>
-    <h2>En cours</h2>
-    <div id="now" class="card muted">Rien en cours.</div>
-    <div id="queue" class="small muted"></div>
-  </section>
+  <details>
+    <summary>Historique</summary>
+    <div id="history" class="list"></div>
+    <div class="row"><button id="clear">Effacer l’historique</button></div>
+  </details>
 
-  <section>
-    <h2>Réglages</h2>
+  <details>
+    <summary>Réglages et sujets</summary>
     <div class="row between">
       <span>Effort de réflexion</span>
-      <div class="seg" id="effort">
-        <button data-v="low">Light</button><button data-v="medium">Medium</button><button data-v="high">High</button>
-      </div>
+      <div class="seg" id="effort"><button data-v="low">Léger</button><button data-v="medium">Moyen</button><button data-v="high">Élevé</button></div>
     </div>
     <label class="row between"><span>Nouvelle conversation à chaque image (sauf sujet)</span><input type="checkbox" id="newchat" /></label>
     <label class="row between"><span>Ouvrir un onglet ChatGPT si aucun ne répond</span><input type="checkbox" id="autoopen" /></label>
-  </section>
+    <div class="sub">Sujets (un sujet = une conversation)</div>
+    <div id="topics" class="list"></div>
+  </details>
 
-  <section>
-    <h2>Sujets <small class="muted">(un sujet = une conversation)</small></h2>
-    <div id="topics" class="list small"></div>
-  </section>
-
-  <section>
-    <div class="row between"><h2>Historique</h2><button id="clear" class="ghost small">Effacer</button></div>
-    <div id="history" class="list"></div>
-  </section>
-
-  <footer class="small muted" id="foot"></footer>
+  <footer id="foot"></footer>
   <script src="popup.js"></script>
 </body>
 </html>
