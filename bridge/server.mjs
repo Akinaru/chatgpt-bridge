@@ -150,6 +150,7 @@ createServer(async (req, res) => {
     // the tab asks, while it works, whether its job is still wanted (cancelled / timed out: it stops ChatGPT at once)
     const al = /^\/ext\/alive\/(j[a-z0-9]+)$/.exec(p);
     if (al) {
+      lastPoll = Date.now(); // a working tab asks every 5 s: it is alive (only /ext/next counted before, so a long job read as "extension unseen")
       const j = jobs.get(al[1]);
       return send(res, 200, {alive: !!j && j.status === 'running'});
     }
