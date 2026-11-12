@@ -53,9 +53,20 @@ function renderNow() {
   const r = status.running;
   if (!r) {
     const last = (hist?.history ?? [])[0];
+    // the last error in plain words (quota and blocked uploads are ChatGPT limits, not bridge bugs)
+    const err = last && last.status === 'error' ? String(last.error || '') : '';
+    const why = /quota|limite|limit/i.test(err)
+      ? 'Limite d’utilisation ChatGPT atteinte : les demandes reprendront quand ChatGPT acceptera de nouveau.'
+      : /file input/i.test(err)
+        ? 'ChatGPT refuse l’envoi d’images pour l’instant (souvent la limite d’utilisation) : nouvel essai plus tard.'
+        : /cancel|annul|SIGTERM/i.test(err)
+          ? 'Demande annulée (relancée automatiquement si un script la surveille).'
+          : err;
     $('now').innerHTML = `<div class="head"><b>Rien en cours</b></div>${
       last
-        ? `<div class="idle">Dernière demande : ${esc(last.topic || 'image')} · <span class="st ${last.status}">${last.status === 'done' ? 'réussie' : 'erreur'}</span> · il y a ${ago(last.ended)}</div>`
+        ? `<div class="idle">Dernière demande : ${esc(last.topic || 'image')} · <span class="st ${last.status}">${last.status === 'done' ? 'réussie' : 'erreur'}</span> · il y a ${ago(last.ended)}</div>${
+            why ? `<div class="hint">${esc(why)}</div>` : ''
+          }`
         : ''
     }`;
     return;
