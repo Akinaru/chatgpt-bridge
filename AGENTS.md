@@ -10,6 +10,10 @@ You can generate images through the user's ChatGPT tab. Follow this exactly.
    - **No `★`** (no working tab chosen): ask the user which tab to use, then run `node bridge/tabs.mjs use <id>`. Never pick one of their other conversations on your own.
 3. You never start the browser or open tabs yourself. The user's own browser does the work.
 
+Mode (owner, 2026-11-12): ChatGPT's home page has a **Chat / Work** switch. The working tab must be in **Work**: its
+composer shows the thinking-effort button (Léger / Moyen / Élevé). A model picker in its place means Chat mode: ask the
+user to switch before sending anything.
+
 ## Make an image
 
 1. Write a job folder:
